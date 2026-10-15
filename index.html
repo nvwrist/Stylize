@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}html,body{margin:0}</style>
+<title>Stylize</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&family=Unbounded:wght@500&display=swap">
+<style>
+/* Layout: заголовок сверху, 3D-сцена на весь остаток, панель кисти снизу — одним экраном под большой палец */
+:root{
+  --bg:#ecebe6; --panel:#f7f6f2; --line:#d5d2ca; --fg:#1c1f22; --muted:#666c73;
+  --accent:#1d6f8a; --accent-fg:#ffffff; --stage-a:#f6f5f1; --stage-b:#d8d5cd;
+  --font-ui:"Onest",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-brand:"Unbounded","Onest",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#13161a; --panel:#1b1f23; --line:#2b3137; --fg:#e7e5e0; --muted:#8d959c;
+    --accent:#5cbfdc; --accent-fg:#0b1a20; --stage-a:#2b3137; --stage-b:#13161a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#13161a; --panel:#1b1f23; --line:#2b3137; --fg:#e7e5e0; --muted:#8d959c;
+  --accent:#5cbfdc; --accent-fg:#0b1a20; --stage-a:#2b3137; --stage-b:#13161a; color-scheme:dark;
+}
+html{box-sizing:border-box;height:100%}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);font-size:15px;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+.app{height:100%;display:flex;flex-direction:column;min-height:0}
+.band{background:var(--panel);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px}
+.top{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.brand{font-family:var(--font-brand);font-weight:500;font-size:15px;letter-spacing:.01em;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottom{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line)}
+button,input{font:inherit;color:inherit}
+.btn{min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-weight:500;cursor:pointer;touch-action:manipulation}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.btn:disabled{opacity:.45}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#stage{position:relative;flex:1;min-height:0;background:radial-gradient(circle at 50% 38%,var(--stage-a),var(--stage-b));overflow:hidden}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.hud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:10px;pointer-events:none;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.hud b{color:var(--fg);font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.models{position:absolute;left:0;right:0;top:52px;display:flex;gap:8px;overflow-x:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));scrollbar-width:none}
+.models::-webkit-scrollbar{display:none}
+.chip{flex:none;min-height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;font-weight:500;cursor:pointer;touch-action:manipulation}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.sheet{position:absolute;right:max(16px,env(safe-area-inset-right,0px));left:max(16px,env(safe-area-inset-left,0px));bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.sheet p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.seg button{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-weight:500;font-size:14px;cursor:pointer;touch-action:manipulation;padding:0 4px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.row{display:flex;align-items:center;gap:10px;min-width:0}
+.well{flex:none;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer}
+.well::-webkit-color-swatch-wrapper{padding:4px}
+.well::-webkit-color-swatch{border:0;border-radius:6px}
+.swatches{display:flex;gap:8px;overflow-x:auto;min-width:0;flex:1;padding-block:4px;scrollbar-width:none}
+.swatches::-webkit-scrollbar{display:none}
+.sw{flex:none;width:34px;height:34px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0;touch-action:manipulation}
+.sw[aria-pressed="true"]{border-color:var(--fg);box-shadow:0 0 0 2px var(--bg) inset}
+.size{display:flex;align-items:center;gap:8px;flex:1;min-width:0;font-size:12px;color:var(--muted)}
+.size input{flex:1;min-width:0;accent-color:var(--accent)}
+.size output{width:2.4em;text-align:right;font-variant-numeric:tabular-nums}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.35;text-align:center}
+.nogl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
+.drop{outline:3px dashed var(--accent);outline-offset:-12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="band top">
+    <h1 class="brand">Покраска GLB</h1>
+    <button class="btn primary" id="btnOpen" type="button">Открыть</button>
+    <button class="btn" id="btnSave" type="button">Сохранить</button>
+    <input type="file" id="file" hidden>
+  </header>
+
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <div class="hud"><b id="hudName">Пример: ваза</b><span id="hudHint"></span></div>
+    <div class="models" id="models"></div>
+    <div class="sheet" id="sheet" hidden>
+      <button class="btn primary" id="saveGlb" type="button">Модель: .zip с файлом .glb</button>
+      <button class="btn" id="savePng" type="button">Текстуры: PNG</button>
+      <p>Прямое сохранение .glb в этом окне недоступно, поэтому модель лежит внутри .zip. Распакуйте его в «Файлах» на телефоне.</p>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="nogl" id="nogl" hidden>Не удалось запустить WebGL. Откройте страницу в обычном браузере.</div>
+  </main>
+
+  <footer class="band bottom">
+    <div class="seg" id="modes">
+      <button type="button" data-mode="paint" aria-pressed="true">Кисть</button>
+      <button type="button" data-mode="erase" aria-pressed="false">Ластик</button>
+      <button type="button" data-mode="fill" aria-pressed="false">Заливка</button>
+      <button type="button" data-mode="rotate" aria-pressed="false">Вращать</button>
+    </div>
+    <div class="row">
+      <input class="well" id="color" type="color" value="#e4572e" aria-label="Цвет">
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="row">
+      <label class="size" for="size">Размер <input id="size" type="range" min="4" max="120" value="28"><output id="sizeOut">28</output></label>
+      <button class="btn" id="undo" type="button">Отмена</button>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), canvas = $('gl');
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  } catch (e) { $('nogl').hidden = false; return; }
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a929a, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 1.0);
+  key.position.set(2, 3, 4);
+  camera.add(key);
+
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.12;
+  controls.screenSpacePanning = true;
+
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  // ---------- состояние ----------
+  const brush = { mode: 'paint', color: '#e4572e', size: 28 };
+  let root = null, modelName = 'vase', animations = [];
+  const dirty = new Set();
+  const undoStack = [];
+  let undoBytes = 0;
+  let stroke = null;
+  let edited = false, armedId = null, armTimer = 0;
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  let toastTimer = 0;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg; el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 4500);
+  }
+
+  // ---------- подготовка текстур ----------
+  function makeEntry(mat, forceSize) {
+    const m = mat.clone();
+    const old = mat.map, src = old && old.image;
+    let size = forceSize || 1024;
+    if (!forceSize && src && src.width) {
+      size = THREE.MathUtils.clamp(THREE.MathUtils.ceilPowerOfTwo(Math.max(src.width, src.height)), 512, 2048);
+    }
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const col = m.color ? m.color.getHexString() : 'ffffff';
+    if (src && src.width) {
+      g.drawImage(src, 0, 0, size, size);
+      if (col !== 'ffffff') {
+        g.globalCompositeOperation = 'multiply';
+        g.fillStyle = '#' + col;
+        g.fillRect(0, 0, size, size);
+        g.globalCompositeOperation = 'source-over';
+      }
+    } else {
+      g.fillStyle = '#' + col;
+      g.fillRect(0, 0, size, size);
+    }
+    if (m.color) m.color.set(0xffffff);
+    const orig = document.createElement('canvas');
+    orig.width = orig.height = size;
+    orig.getContext('2d').drawImage(c, 0, 0);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.flipY = false;
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = maxAniso;
+    if (old) { tex.wrapS = old.wrapS; tex.wrapT = old.wrapT; }
+    m.map = tex;
+    m.needsUpdate = true;
+    return { mat: m, size: size, canvas: c, ctx: g, orig: orig, tex: tex };
+  }
+
+  function prepare(obj) {
+    let parts = 0, skipped = 0;
+    obj.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.geometry.attributes.uv) { skipped++; return; }
+      const list = [];
+      if (Array.isArray(o.material)) {
+        const arr = o.material.map((mt) => { const e = makeEntry(mt, o.userData.texSize); list.push(e); return e.mat; });
+        o.material = arr;
+      } else {
+        const e = makeEntry(o.material, o.userData.texSize); list.push(e); o.material = e.mat;
+      }
+      o.userData.paint = list;
+      parts += list.length;
+    });
+    return { parts: parts, skipped: skipped };
+  }
+
+  function allEntries() {
+    const out = [];
+    if (root) root.traverse((o) => { if (o.userData && o.userData.paint) o.userData.paint.forEach((e) => out.push(e)); });
+    return out;
+  }
+
+  function clearModel() {
+    if (root) {
+      scene.remove(root);
+      root.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.userData && o.userData.paint) o.userData.paint.forEach((e) => { e.tex.dispose(); });
+      });
+    }
+    root = null; dirty.clear(); undoStack.length = 0; undoBytes = 0; stroke = null;
+  }
+
+  function fitCamera() {
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const dim = Math.max(size.x, size.y, size.z) || 1;
+    const dist = (dim / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))) * 1.7;
+    camera.near = dim / 500; camera.far = dim * 200;
+    camera.updateProjectionMatrix();
+    controls.target.copy(center);
+    camera.position.set(center.x + dist * 0.35, center.y + dist * 0.25, center.z + dist);
+    controls.minDistance = dim * 0.2;
+    controls.maxDistance = dim * 12;
+    controls.update();
+  }
+
+  function setModel(obj, name, anims, isExample) {
+    clearModel();
+    root = obj; modelName = name; animations = anims || []; edited = false;
+    scene.add(root);
+    const info = prepare(root);
+    fitCamera();
+    $('hudName').textContent = (isExample ? 'Пример: ' : '') + name + ' · деталей для покраски: ' + info.parts;
+    if (!info.parts) toast('У модели нет UV-развёртки, красить нечего.');
+    else if (info.skipped) toast('Часть деталей без UV пропущена: ' + info.skipped + '.');
+    return info;
+  }
+
+  // ---------- пример модели ----------
+  function buildExample() {
+    const pts = new THREE.SplineCurve([
+      new THREE.Vector2(0.0, 0.0), new THREE.Vector2(0.55, 0.0), new THREE.Vector2(0.62, 0.06),
+      new THREE.Vector2(0.82, 0.55), new THREE.Vector2(0.84, 0.95), new THREE.Vector2(0.58, 1.4),
+      new THREE.Vector2(0.38, 1.62), new THREE.Vector2(0.36, 1.85), new THREE.Vector2(0.5, 2.0)
+    ]).getPoints(70);
+    const mesh = new THREE.Mesh(
+      new THREE.LatheGeometry(pts, 72),
+      new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide })
+    );
+    mesh.name = 'vase';
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    return grp;
+  }
+  function seedExample() {
+    const e = allEntries()[0];
+    if (!e) return;
+    const W = e.size;
+    [[0.30, 0.045, '#2f9e8f'], [0.40, 0.02, '#f2a63b'], [0.62, 0.05, '#e4572e']].forEach((b) => {
+      [e.ctx, e.orig.getContext('2d')].forEach((g) => {
+        g.fillStyle = b[2];
+        g.fillRect(0, b[0] * W, W, b[1] * W);
+      });
+    });
+    e.tex.needsUpdate = true;
+  }
+
+  // ---------- библиотека моделей (у каждой своя развёртка UV, без наложения островков) ----------
+  function boxUV(g) {
+    // шесть граней раскладываются по сетке 3x3, ячейки квадратные, поэтому краска не растягивается
+    const uv = g.attributes.uv, pad = 0.003;
+    for (let f = 0; f < 6; f++) {
+      const c = f % 3, r = Math.floor(f / 3);
+      for (let i = 0; i < 4; i++) {
+        const k = f * 4 + i;
+        uv.setXY(k, (c + pad + uv.getX(k) * (1 - 2 * pad)) / 3, (r + pad + uv.getY(k) * (1 - 2 * pad)) / 3);
+      }
+    }
+    uv.needsUpdate = true;
+  }
+  function mk(geom, color, size) {
+    const m = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide }));
+    if (size) m.userData.texSize = size;
+    return m;
+  }
+  function pv(arr) { return arr.map((p) => new THREE.Vector2(p[0], p[1])); }
+  function latheSharp(arr, seg) { return new THREE.LatheGeometry(pv(arr), seg || 56); }
+  function latheSmooth(arr, n, seg) { return new THREE.LatheGeometry(new THREE.SplineCurve(pv(arr)).getPoints(n), seg || 56); }
+  function grp() { const g = new THREE.Group(); Array.prototype.slice.call(arguments).forEach((m) => g.add(m)); return g; }
+  function boxPart(w, h, d, color, size, x, y, z) {
+    const g = new THREE.BoxGeometry(w, h, d); boxUV(g);
+    const m = mk(g, color, size); m.position.set(x, y, z); return m;
+  }
+
+  function buildBox() { return grp(boxPart(1.2, 1, 1.2, 0xcaa77a, 2048, 0, 0.5, 0)); }
+  function buildChest() {
+    return grp(
+      boxPart(1.4, 0.8, 0.9, 0x9a6b42, 2048, 0, 0.4, 0),
+      boxPart(1.46, 0.3, 0.96, 0x8a5b36, 1024, 0, 0.95, 0),
+      boxPart(0.2, 0.24, 0.06, 0xd7b84a, 512, 0, 0.82, 0.48)
+    );
+  }
+  function buildMug() {
+    const body = mk(latheSharp([[0, 0], [0.46, 0], [0.5, 0.02], [0.52, 0.07], [0.52, 0.93], [0.5, 0.98], [0.47, 1.0], [0.44, 0.98], [0.42, 0.93], [0.42, 0.14], [0.38, 0.1], [0, 0.1]], 48), 0xeeeae2);
+    const handle = mk(new THREE.TorusGeometry(0.27, 0.07, 14, 30, Math.PI), 0xeeeae2);
+    handle.rotation.z = -Math.PI / 2; handle.position.set(0.5, 0.55, 0);
+    return grp(body, handle);
+  }
+  function buildPot() {
+    const pot = mk(latheSharp([[0, 0], [0.42, 0], [0.46, 0.04], [0.62, 0.92], [0.7, 0.96], [0.72, 1.02], [0.66, 1.06], [0.6, 1.02], [0.56, 0.92], [0, 0.9]], 56), 0xc9835a);
+    const bush = mk(new THREE.SphereGeometry(0.55, 32, 22), 0x7fae6a);
+    bush.scale.y = 0.9; bush.position.set(0, 1.4, 0);
+    return grp(pot, bush);
+  }
+  function buildBottle() {
+    const glass = mk(latheSmooth([[0, 0], [0.4, 0], [0.45, 0.12], [0.46, 0.9], [0.4, 1.15], [0.24, 1.4], [0.2, 1.6], [0.2, 1.95], [0.23, 2.0], [0.2, 2.03], [0, 2.03]], 80, 64), 0x9cc7b3);
+    const cork = mk(latheSharp([[0, 2.0], [0.14, 2.0], [0.16, 2.04], [0.16, 2.2], [0.14, 2.24], [0, 2.24]], 32), 0xc9a06a);
+    return grp(glass, cork);
+  }
+  function buildBarrel() {
+    return grp(mk(latheSmooth([[0, 0], [0.55, 0], [0.62, 0.3], [0.7, 0.7], [0.62, 1.1], [0.55, 1.4], [0, 1.4]], 90, 64), 0xa8764a));
+  }
+  function buildRock() {
+    const g = new THREE.SphereGeometry(1, 48, 32), p = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const n = Math.sin(v.x * 2.3 + 1.1) * Math.sin(v.y * 2.9 + 0.3) * Math.sin(v.z * 2.6 + 2.0) * 0.5 + Math.sin(v.x * 5.1 + v.z * 4.3) * 0.12;
+      v.multiplyScalar(1 + n * 0.35); v.y *= 0.75;
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    return grp(mk(g, 0xa7a49d));
+  }
+  function buildMushroom() {
+    const stem = mk(latheSmooth([[0, 0], [0.3, 0], [0.24, 0.35], [0.2, 0.8], [0, 0.82]], 40, 40), 0xf1e6cf);
+    const cap = mk(latheSmooth([[0.12, 0], [0.6, -0.04], [0.82, 0.05], [0.74, 0.3], [0.5, 0.5], [0.25, 0.6], [0, 0.62]], 60, 56), 0xd9503f);
+    cap.position.y = 0.78;
+    return grp(stem, cap);
+  }
+
+  const MODELS = [
+    { id: 'vase', name: 'Ваза', build: () => buildExample() },
+    { id: 'box', name: 'Коробка', build: buildBox },
+    { id: 'chest', name: 'Сундук', build: buildChest },
+    { id: 'mug', name: 'Кружка', build: buildMug },
+    { id: 'pot', name: 'Горшок', build: buildPot },
+    { id: 'bottle', name: 'Бутылка', build: buildBottle },
+    { id: 'barrel', name: 'Бочка', build: buildBarrel },
+    { id: 'rock', name: 'Камень', build: buildRock },
+    { id: 'mushroom', name: 'Гриб', build: buildMushroom }
+  ];
+  const modelsEl = $('models');
+  MODELS.forEach((m) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.dataset.id = m.id; b.textContent = m.name;
+    b.setAttribute('aria-pressed', 'false');
+    modelsEl.appendChild(b);
+  });
+  function markModel(id) {
+    modelsEl.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  }
+  function loadBuiltin(id) {
+    const m = MODELS.find((x) => x.id === id);
+    if (!m) return;
+    const info = setModel(m.build(), m.id, [], true);
+    $('hudName').textContent = 'Модель: ' + m.name + ' · деталей для покраски: ' + info.parts;
+    markModel(id);
+  }
+  modelsEl.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.chip');
+    if (!b) return;
+    const id = b.dataset.id;
+    if (edited && armedId !== id) {
+      armedId = id;
+      toast('Покраска не сохранена и пропадёт. Нажмите ещё раз, чтобы сменить модель.');
+      clearTimeout(armTimer);
+      armTimer = setTimeout(() => { armedId = null; }, 4500);
+      return;
+    }
+    armedId = null;
+    loadBuiltin(id);
+  });
+
+  // ---------- рисование ----------
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+
+  function pick(cx, cy) {
+    if (!root) return null;
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hits = ray.intersectObject(root, true);
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i], o = h.object;
+      if (!o.isMesh) continue;
+      const list = o.userData.paint;
+      if (!list || !h.uv) return null;
+      const idx = Array.isArray(o.material) && h.face ? h.face.materialIndex : 0;
+      const e = list[idx] || list[0];
+      return e ? { entry: e, uv: h.uv } : null;
+    }
+    return null;
+  }
+
+  function rgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  function snapshot(entry) {
+    if (!stroke.has(entry)) stroke.set(entry, entry.ctx.getImageData(0, 0, entry.size, entry.size));
+  }
+
+  function dab(h) {
+    const e = h.entry, g = e.ctx, W = e.size;
+    snapshot(e);
+    const x = (((h.uv.x % 1) + 1) % 1) * W, y = (((h.uv.y % 1) + 1) % 1) * W;
+    const R = Math.max(1.5, (brush.size * W) / 1024);
+    if (brush.mode === 'erase') {
+      g.save();
+      g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.clip();
+      g.clearRect(x - R, y - R, R * 2, R * 2);
+      g.drawImage(e.orig, 0, 0);
+      g.restore();
+    } else {
+      const c = rgb(brush.color), base = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',';
+      const grad = g.createRadialGradient(x, y, R * 0.55, x, y, R);
+      grad.addColorStop(0, base + '1)');
+      grad.addColorStop(1, base + '0)');
+      g.fillStyle = grad;
+      g.fillRect(x - R, y - R, R * 2, R * 2);
+    }
+    dirty.add(e);
+  }
+
+  function pushUndo(map) {
+    let bytes = 0;
+    map.forEach((img) => { bytes += img.data.length; });
+    undoStack.push({ map: map, bytes: bytes });
+    undoBytes += bytes;
+    while (undoBytes > 96e6 && undoStack.length > 1) undoBytes -= undoStack.shift().bytes;
+  }
+
+  function endStroke() {
+    if (stroke && stroke.size) { pushUndo(stroke); edited = true; }
+    stroke = null;
+  }
+
+  function fillEntry(e) {
+    stroke = new Map();
+    snapshot(e);
+    e.ctx.clearRect(0, 0, e.size, e.size);
+    e.ctx.fillStyle = brush.color;
+    e.ctx.fillRect(0, 0, e.size, e.size);
+    dirty.add(e);
+    endStroke();
+  }
+
+  function undo() {
+    const s = undoStack.pop();
+    if (!s) { toast('Больше нечего отменять.'); return; }
+    undoBytes -= s.bytes;
+    s.map.forEach((img, e) => { e.ctx.putImageData(img, 0, 0); dirty.add(e); });
+  }
+
+  const pts = new Map();
+  let last = null;
+  canvas.addEventListener('pointerdown', (ev) => {
+    pts.set(ev.pointerId, 1);
+    if (pts.size > 1) { endStroke(); return; }
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    if (brush.mode === 'rotate') return;
+    const h = pick(ev.clientX, ev.clientY);
+    if (brush.mode === 'fill') { if (h) fillEntry(h.entry); return; }
+    stroke = new Map();
+    last = { x: ev.clientX, y: ev.clientY };
+    if (h) dab(h);
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (!stroke || pts.size !== 1 || !last) return;
+    const dx = ev.clientX - last.x, dy = ev.clientY - last.y;
+    const n = Math.min(40, Math.max(1, Math.ceil(Math.hypot(dx, dy) / 5)));
+    for (let i = 1; i <= n; i++) {
+      const h = pick(last.x + (dx * i) / n, last.y + (dy * i) / n);
+      if (h) dab(h);
+    }
+    last = { x: ev.clientX, y: ev.clientY };
+  });
+  const up = (ev) => { pts.delete(ev.pointerId); if (!pts.size) endStroke(); };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // ---------- режимы и панель ----------
+  const hints = {
+    paint: 'Один палец красит, два пальца вращают и приближают',
+    erase: 'Ластик возвращает исходную текстуру',
+    fill: 'Нажмите на деталь, чтобы залить её текстуру целиком',
+    rotate: 'Один палец вращает, два пальца приближают'
+  };
+  function setMode(m) {
+    brush.mode = m;
+    document.querySelectorAll('#modes button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+    const rot = m === 'rotate';
+    controls.touches = { ONE: rot ? THREE.TOUCH.ROTATE : -1, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    controls.mouseButtons = { LEFT: rot ? THREE.MOUSE.ROTATE : -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    $('hudHint').textContent = hints[m];
+  }
+  $('modes').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-mode]');
+    if (b) setMode(b.dataset.mode);
+  });
+
+  const palette = ['#e4572e', '#f2a63b', '#f5d547', '#6cbf6a', '#2f9e8f', '#3b82c4', '#5a4fcf', '#c04f9e', '#ffffff', '#b9b9b9', '#5b5b5b', '#1b1b1b'];
+  const swWrap = $('swatches');
+  function markSwatch() {
+    swWrap.querySelectorAll('.sw').forEach((s) => s.setAttribute('aria-pressed', String(s.dataset.c === brush.color)));
+  }
+  palette.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'sw'; b.dataset.c = c;
+    b.style.background = c; b.setAttribute('aria-label', 'Цвет ' + c); b.setAttribute('aria-pressed', 'false');
+    swWrap.appendChild(b);
+  });
+  function setColor(c) {
+    brush.color = c; $('color').value = c; markSwatch();
+    if (brush.mode === 'erase' || brush.mode === 'rotate') setMode('paint');
+  }
+  swWrap.addEventListener('click', (ev) => { const b = ev.target.closest('.sw'); if (b) setColor(b.dataset.c); });
+  $('color').addEventListener('input', (ev) => setColor(ev.target.value));
+  markSwatch();
+
+  $('size').addEventListener('input', (ev) => { brush.size = +ev.target.value; $('sizeOut').textContent = ev.target.value; });
+  $('undo').addEventListener('click', undo);
+
+  // ---------- открытие файла ----------
+  const loader = new THREE.GLTFLoader();
+  async function loadFile(f) {
+    try {
+      const buf = await f.arrayBuffer();
+      const magic = new Uint8Array(buf, 0, 4);
+      const isGlb = magic[0] === 0x67 && magic[1] === 0x6c && magic[2] === 0x54 && magic[3] === 0x46;
+      const data = isGlb ? buf : new TextDecoder().decode(buf);
+      loader.parse(data, '', (gltf) => {
+        setModel(gltf.scene, f.name.replace(/\.[^.]+$/, '') || 'model', gltf.animations, false);
+        undoStack.length = 0;
+        markModel('');
+      }, (err) => {
+        const msg = String((err && err.message) || err);
+        toast(/draco|meshopt|extension/i.test(msg) ? 'Модель сжата Draco или Meshopt, такие файлы не поддерживаются.' : 'Не удалось прочитать файл. Нужен .glb.');
+      });
+    } catch (e) { toast('Не удалось открыть файл.'); }
+  }
+  $('btnOpen').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', (ev) => { const f = ev.target.files[0]; if (f) loadFile(f); ev.target.value = ''; });
+  stage.addEventListener('dragover', (ev) => { ev.preventDefault(); stage.classList.add('drop'); });
+  stage.addEventListener('dragleave', () => stage.classList.remove('drop'));
+  stage.addEventListener('drop', (ev) => {
+    ev.preventDefault(); stage.classList.remove('drop');
+    const f = ev.dataTransfer && ev.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  // ---------- сохранение ----------
+  let downloads = null;
+  (async () => {
+    try { if (window.claude && window.claude.use) downloads = await window.claude.use('downloads'); } catch (e) { downloads = null; }
+    if (!downloads) downloads = {
+      save: async (r) => {
+        const url = URL.createObjectURL(r.data instanceof Blob ? r.data : new Blob([r.data]));
+        const a = document.createElement('a');
+        a.href = url; a.download = r.filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        return { status: 'saved' };
+      }
+    };
+  })();
+
+  const crcTable = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+    return t;
+  })();
+  function crc32(u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+
+  function makeZip(files) {
+    const enc = new TextEncoder(), parts = [], central = [];
+    let offset = 0;
+    files.forEach((f) => {
+      const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+      lh.setUint16(8, 0, true); lh.setUint16(10, 0, true); lh.setUint16(12, 0x21, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+      lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+      parts.push(new Uint8Array(lh.buffer), name, f.data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+      ch.setUint16(10, 0, true); ch.setUint16(12, 0, true); ch.setUint16(14, 0x21, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+      ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), name);
+      offset += 30 + name.length + size;
+    });
+    let cdSize = 0;
+    central.forEach((p) => { cdSize += p.length; });
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+    end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [new Uint8Array(end.buffer)]), { type: 'application/zip' });
+  }
+
+  function exportGLB() {
+    return new Promise((resolve, reject) => {
+      const ex = new THREE.GLTFExporter();
+      const opts = { binary: true, onlyVisible: true, embedImages: true, animations: animations };
+      const done = (r) => resolve(r instanceof ArrayBuffer ? r : new TextEncoder().encode(JSON.stringify(r)).buffer);
+      try {
+        if (ex.parse.length >= 4) ex.parse(root, done, reject, opts);
+        else ex.parse(root, done, opts);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function canvasPng(c) { return new Promise((res) => c.toBlob(res, 'image/png')); }
+
+  async function saveFile(filename, blob) {
+    if (!downloads) { toast('Сохранение недоступно в этом окне просмотра.'); return; }
+    try {
+      await downloads.save({ filename: filename, data: blob });
+      edited = false;
+      toast('Сохранено: ' + filename);
+    } catch (e) {
+      if (e && e.code === 'declined') return;
+      toast(e && e.code === 'rate_limited' ? 'Подождите секунду и повторите.' : 'Не удалось сохранить файл.');
+    }
+  }
+
+  $('btnSave').addEventListener('click', () => { $('sheet').hidden = !$('sheet').hidden; });
+
+  $('saveGlb').addEventListener('click', async () => {
+    if (!root) return;
+    const b = $('saveGlb'); b.disabled = true;
+    try {
+      const glb = await exportGLB();
+      const zip = makeZip([{ name: modelName + '-painted.glb', data: new Uint8Array(glb) }]);
+      $('sheet').hidden = true;
+      await saveFile(modelName + '-painted.zip', zip);
+    } catch (e) { toast('Не удалось собрать GLB.'); }
+    b.disabled = false;
+  });
+
+  $('savePng').addEventListener('click', async () => {
+    const list = allEntries();
+    if (!list.length) return;
+    const b = $('savePng'); b.disabled = true;
+    try {
+      $('sheet').hidden = true;
+      if (list.length === 1) {
+        await saveFile(modelName + '-texture.png', await canvasPng(list[0].canvas));
+      } else {
+        const files = [];
+        for (let i = 0; i < list.length; i++) {
+          const blob = await canvasPng(list[i].canvas);
+          files.push({ name: modelName + '-texture-' + (i + 1) + '.png', data: new Uint8Array(await blob.arrayBuffer()) });
+        }
+        await saveFile(modelName + '-textures.zip', makeZip(files));
+      }
+    } catch (e) { toast('Не удалось собрать текстуры.'); }
+    b.disabled = false;
+  });
+
+  // ---------- старт ----------
+  setMode('paint');
+  setModel(buildExample(), 'vase', [], true);
+  seedExample();
+  markModel('vase');
+  $('hudName').textContent = 'Модель: ваза · свой .glb открывается кнопкой сверху';
+
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    if (dirty.size) { dirty.forEach((e) => { e.tex.needsUpdate = true; }); dirty.clear(); }
+    renderer.render(scene, camera);
+  });
+})();
+</script>
+</body>
+</html>
