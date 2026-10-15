@@ -46,6 +46,12 @@ button,input{font:inherit;color:inherit}
 .fab{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:10px;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;font-weight:500;cursor:pointer;touch-action:manipulation;z-index:2}
 .fab[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
 .fab.two{top:54px}
+.fab.three{top:98px}
+.irow{display:grid;grid-template-columns:4.4em repeat(3,minmax(0,1fr));gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.irow input{width:100%;min-width:0;min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:0 6px;font-variant-numeric:tabular-nums;font-size:14px}
+.insp{display:flex;flex-direction:column;gap:6px}
+.sheet h3{margin:0;font-size:14px}
+.sheet ol{margin:0;padding-left:1.2em;font-size:13px;line-height:1.5;color:var(--fg)}
 .seg.c5{grid-template-columns:repeat(5,1fr)}
 #photoOv{position:absolute;pointer-events:none;transform-origin:50% 50%;z-index:1;max-width:none;user-select:none;-webkit-user-select:none}
 .stack{display:flex;flex-direction:column;gap:8px}
@@ -59,7 +65,7 @@ button,input{font:inherit;color:inherit}
 .chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
 .sheet{position:absolute;right:max(16px,env(safe-area-inset-right,0px));left:max(16px,env(safe-area-inset-left,0px));bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;max-height:calc(100% - 20px);overflow-y:auto}
 .sheet p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
-.panel{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto;scrollbar-width:none}
+.panel{display:flex;flex-direction:column;gap:8px;max-height:42vh;overflow-y:auto;scrollbar-width:none}
 .panel::-webkit-scrollbar{display:none}
 .lbl{margin:0;font-size:12px;color:var(--muted)}
 .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
@@ -101,6 +107,8 @@ button,input{font:inherit;color:inherit}
     <div class="hud"><b id="hudName"></b><span id="hudStats"></span><span id="hudHint"></span></div>
     <button class="fab" id="wireBtn" type="button" aria-pressed="false" title="Показать каркас модели">Каркас</button>
     <button class="fab two" id="uvBtn" type="button" aria-pressed="false" title="Показать UV-развёртку">UV</button>
+    <button class="fab three" id="helpBtn" type="button" aria-pressed="false" title="Подсказка">?</button>
+    <div class="sheet" id="helpSheet" hidden><h3 id="helpTitle"></h3><ol id="helpList"></ol><button class="btn" id="helpClose" type="button">Понятно</button></div>
     <div class="uvbox" id="uvBox" hidden><canvas id="uvCv" width="512" height="512"></canvas><p id="uvInfo"></p></div>
     <img id="photoOv" alt="" hidden>
     <div class="ring" id="ring" hidden></div>
@@ -135,21 +143,33 @@ button,input{font:inherit;color:inherit}
 
     <section class="panel" id="p-build">
       <div class="seg sm" id="gizmo">
-        <button type="button" data-g="select" aria-pressed="true">Выбор</button>
-        <button type="button" data-g="translate" aria-pressed="false">Двигать</button>
+        <button type="button" data-g="translate" aria-pressed="true">Двигать</button>
         <button type="button" data-g="rotate" aria-pressed="false">Вращать</button>
         <button type="button" data-g="scale" aria-pressed="false">Размер</button>
+        <button type="button" id="snapBtn" aria-pressed="true" title="Шаг сетки 0,25 м, поворот 15°">Привязка</button>
       </div>
       <div class="seg sm" id="actions">
         <button type="button" id="dupe">Дубль</button>
+        <button type="button" id="mirror">Зеркало</button>
+        <button type="button" id="ground">На землю</button>
         <button type="button" id="del">Удалить</button>
-        <button type="button" id="frame">Вписать</button>
-        <button type="button" id="clear">Очистить</button>
       </div>
-      <p class="lbl">Объекты сцены</p>
-      <div class="chips" id="objects"></div>
+      <div class="insp" id="insp" hidden>
+        <div class="irow"><span>Размер, м</span><input data-f="sx" type="number" step="0.05" inputmode="decimal" aria-label="Размер X"><input data-f="sy" type="number" step="0.05" inputmode="decimal" aria-label="Размер Y"><input data-f="sz" type="number" step="0.05" inputmode="decimal" aria-label="Размер Z"></div>
+        <div class="irow"><span>Позиция</span><input data-f="px" type="number" step="0.05" inputmode="decimal" aria-label="Позиция X"><input data-f="py" type="number" step="0.05" inputmode="decimal" aria-label="Позиция Y"><input data-f="pz" type="number" step="0.05" inputmode="decimal" aria-label="Позиция Z"></div>
+        <div class="irow"><span>Поворот °</span><input data-f="rx" type="number" step="5" inputmode="decimal" aria-label="Поворот X"><input data-f="ry" type="number" step="5" inputmode="decimal" aria-label="Поворот Y"><input data-f="rz" type="number" step="5" inputmode="decimal" aria-label="Поворот Z"></div>
+      </div>
+      <p class="lbl">Вид камеры</p>
+      <div class="seg sm" id="views">
+        <button type="button" data-v="fit">Вписать</button>
+        <button type="button" data-v="front">Спереди</button>
+        <button type="button" data-v="top">Сверху</button>
+        <button type="button" data-v="right">Справа</button>
+      </div>
       <p class="lbl">Добавить фигуру</p>
       <div class="chips" id="shapes"></div>
+      <p class="lbl">Объекты сцены</p>
+      <div class="chips" id="objects"></div>
       <p class="lbl">Шаблоны (заменяют сцену)</p>
       <div class="chips" id="models"></div>
     </section>
@@ -275,7 +295,10 @@ button,input{font:inherit;color:inherit}
   controls.screenSpacePanning = true;
 
   const tc = new THREE.TransformControls(camera, canvas);
-  tc.size = 1.1;
+  tc.size = 1.5;
+  const ground = new THREE.GridHelper(40, 40, 0x8a929a, 0xb4b9bd);
+  ground.material.transparent = true; ground.material.opacity = 0.45;
+  scene.add(ground);
   scene.add(tc);
   const pivot = new THREE.Object3D();
   scene.add(pivot);
@@ -295,7 +318,7 @@ button,input{font:inherit;color:inherit}
   resize();
 
   // ---------- состояние ----------
-  const ui = { tab: 'build', gizmo: 'select', egizmo: 'translate' };
+  const ui = { tab: 'build', gizmo: 'translate', egizmo: 'translate', snap: true };
   const brush = { mode: 'paint', color: '#e4572e', size: 28 };
   const sculpt = { tool: 'draw', size: 60, strength: 40, invert: false, sym: false };
   let root = null, modelName = 'scene', animations = [], selected = null, counter = 0;
@@ -496,7 +519,7 @@ button,input{font:inherit;color:inherit}
       else tc.detach();
       return;
     }
-    if (selected && ui.tab === 'build' && ui.gizmo !== 'select') { tc.setMode(ui.gizmo); tc.attach(selected); }
+    if (selected && ui.tab === 'build') { tc.setMode(ui.gizmo); tc.attach(selected); }
     else tc.detach();
   }
 
@@ -586,36 +609,65 @@ button,input{font:inherit;color:inherit}
     g.clearGroups();
     uv.needsUpdate = true;
   }
+  // фигуры лёгкие (мало полигонов), детали добавляются «Детализацией» во вкладке «Лепка»
+  function flatGeo(pts, faces) {
+    const pos = [];
+    faces.forEach((f) => f.forEach((i) => pos.push(pts[i][0], pts[i][1], pts[i][2])));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(pos), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));
+    g.computeVertexNormals();
+    return autoUV(g);
+  }
+  function autoUV(g) {
+    const E = edFromGeo({ geometry: g });
+    E.tuv = unwrapModel(E).uv;
+    const r = edBuild(E).geo;
+    g.dispose();
+    return r;
+  }
   const SHAPES = [
-    { id: 'cube', name: 'Куб', build: () => { const g = new THREE.BoxGeometry(1, 1, 1, 12, 12, 12); boxUV(g, 12); return g; } },
-    { id: 'sphere', name: 'Шар', build: () => new THREE.SphereGeometry(0.5, 64, 48) },
-    { id: 'cylinder', name: 'Цилиндр', build: () => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 56, 16); remapGroups(g); return g; } },
-    { id: 'cone', name: 'Конус', build: () => { const g = new THREE.CylinderGeometry(0, 0.5, 1, 56, 16); g.groups.forEach((gr) => { if (gr.materialIndex === 2) gr.materialIndex = 1; }); remapGroups(g); return g; } },
-    { id: 'torus', name: 'Тор', build: () => new THREE.TorusGeometry(0.38, 0.14, 32, 64) },
-    { id: 'plane', name: 'Плоскость', build: () => new THREE.PlaneGeometry(1, 1, 24, 24) }
+    { id: 'cube', name: 'Куб', size: [1, 1, 1], build: () => { const g = new THREE.BoxGeometry(1, 1, 1, 1, 1, 1); boxUV(g, 1); g.clearGroups(); return g; } },
+    { id: 'roof', name: 'Крыша', size: [2, 0.8, 1.6], build: () => flatGeo([[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0, 0.5, -0.5], [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0, 0.5, 0.5]], [[3, 4, 5], [0, 2, 1], [0, 1, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2], [1, 2, 5], [1, 5, 4]]) },
+    { id: 'pyramid', name: 'Пирамида', size: [1, 1, 1], build: () => flatGeo([[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5], [0, 0.5, 0]], [[0, 1, 2], [0, 2, 3], [3, 2, 4], [2, 1, 4], [1, 0, 4], [0, 3, 4]]) },
+    { id: 'cylinder', name: 'Цилиндр', size: [1, 1, 1], build: () => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 1); remapGroups(g); return g; } },
+    { id: 'cone', name: 'Конус', size: [1, 1, 1], build: () => { const g = new THREE.CylinderGeometry(0, 0.5, 1, 24, 1); g.groups.forEach((gr) => { if (gr.materialIndex === 2) gr.materialIndex = 1; }); remapGroups(g); return g; } },
+    { id: 'sphere', name: 'Шар', size: [1, 1, 1], build: () => new THREE.SphereGeometry(0.5, 24, 16) },
+    { id: 'torus', name: 'Тор', size: [1, 1, 1], build: () => new THREE.TorusGeometry(0.38, 0.14, 12, 28) },
+    { id: 'plane', name: 'Плоскость', size: [2, 1, 2], build: () => { const g = new THREE.PlaneGeometry(1, 1, 1, 1); g.rotateX(-Math.PI / 2); return g; } }
   ];
   const SHAPE_COLORS = [0xd9d4c7, 0xe4b88a, 0xa9c7d6, 0xb7d3a8, 0xe1a6a0, 0xc9b9e0];
+  const snapV = (v) => (ui.snap ? Math.round(v / 0.25) * 0.25 : v);
   function addShape(id) {
     const s = SHAPES.find((x) => x.id === id);
     if (!s) return;
     if (!root) { root = new THREE.Group(); scene.add(root); }
     const box = new THREE.Box3().setFromObject(root);
-    const dim = box.isEmpty() ? 2 : Math.max(...box.getSize(new THREE.Vector3()).toArray());
-    const u = dim * 0.5;
+    const dim = box.isEmpty() ? 0 : Math.max(...box.getSize(new THREE.Vector3()).toArray());
+    const u = dim > 0 && (dim < 0.5 || dim > 20) ? dim * 0.5 : 1;
     const g = s.build();
-    g.scale(u, u, u);
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: SHAPE_COLORS[counter % SHAPE_COLORS.length], roughness: 0.6, metalness: 0, side: THREE.DoubleSide }));
+    m.scale.set(s.size[0] * u, s.size[1] * u, s.size[2] * u);
     m.userData.texSize = 1024;
     m.userData.label = s.name + ' ' + (++counter);
-    // в пустой сцене — в центр, иначе рядом справа от уже собранного, чтобы не прятать фигуру внутри модели
-    if (box.isEmpty()) m.position.copy(controls.target);
-    else m.position.set(box.max.x + u * 0.6, box.min.y + u * 0.5, (box.min.z + box.max.z) / 2);
+    // появляется там, куда смотрит камера, и стоит на земле
+    g.computeBoundingBox();
+    m.position.set(snapV(controls.target.x), -g.boundingBox.min.y * m.scale.y, snapV(controls.target.z));
     root.add(m);
+    // ищем свободное место вправо от точки взгляда, чтобы фигура не оказалась внутри уже собранного
+    const others = meshes().filter((o) => o !== m).map((o) => new THREE.Box3().setFromObject(o).expandByScalar(-0.01));
+    for (let tries = 0; tries < 80; tries++) {
+      m.updateWorldMatrix(true, false);
+      const mine = new THREE.Box3().setFromObject(m);
+      if (!others.some((o) => o.intersectsBox(mine))) break;
+      m.position.x += 0.5;
+    }
+    const ndc = m.getWorldPosition(new THREE.Vector3()).project(camera);
+    const offscreen = Math.abs(ndc.x) > 0.9 || Math.abs(ndc.y) > 0.9;
     prepareMesh(m);
     commit(addMeshCmd(m, true));
     select(m);
-    if (ui.gizmo === 'select') setGizmo('translate');
-    if (box.isEmpty()) fitCamera(); else focusOn(m);
+    if (box.isEmpty()) fitCamera(); else if (offscreen) focusOn(m);
   }
 
   // ---------- пример модели и шаблоны ----------
@@ -709,7 +761,36 @@ button,input{font:inherit;color:inherit}
     return grp(stem, cap);
   }
 
+  function part(id, sx, sy, sz, color, x, y, z, label, rx, ry, rz) {
+    const sh = SHAPES.find((q) => q.id === id), m = mk(sh.build(), color, 512, label);
+    m.scale.set(sx, sy, sz); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, rz || 0);
+    return m;
+  }
+  function buildHouse() {
+    return grp(
+      part('cube', 4, 2.4, 3, 0xe6d8bd, 0, 1.2, 0, 'Стены'),
+      part('roof', 4.6, 1.3, 3.6, 0xb5523b, 0, 3.05, 0, 'Крыша'),
+      part('cube', 0.9, 1.7, 0.12, 0x7a4a2a, 0, 0.85, 1.53, 'Дверь'),
+      part('cube', 0.9, 0.9, 0.12, 0x9cc7e0, -1.2, 1.4, 1.53, 'Окно слева'),
+      part('cube', 0.9, 0.9, 0.12, 0x9cc7e0, 1.2, 1.4, 1.53, 'Окно справа'),
+      part('cube', 0.5, 1.2, 0.5, 0x8a8a86, 1.3, 3.3, -0.6, 'Труба')
+    );
+  }
+  function buildCar() {
+    const r = Math.PI / 2, wheel = (x, z, n) => part('cylinder', 0.9, 0.4, 0.9, 0x2b2b2b, x, 0.45, z, n, r, 0, 0);
+    return grp(
+      part('cube', 4.2, 0.7, 1.9, 0xc8372d, 0, 0.8, 0, 'Кузов'),
+      part('cube', 2.0, 0.6, 1.7, 0x9fc5da, -0.2, 1.45, 0, 'Стёкла'),
+      part('cube', 2.1, 0.1, 1.76, 0xc8372d, -0.2, 1.8, 0, 'Крыша'),
+      wheel(1.3, 0.95, 'Колесо 1'), wheel(1.3, -0.95, 'Колесо 2'), wheel(-1.3, 0.95, 'Колесо 3'), wheel(-1.3, -0.95, 'Колесо 4'),
+      part('cube', 0.1, 0.2, 0.45, 0xf5d547, 2.12, 0.9, 0.6, 'Фара 1'),
+      part('cube', 0.1, 0.2, 0.45, 0xf5d547, 2.12, 0.9, -0.6, 'Фара 2')
+    );
+  }
   const MODELS = [
+    { id: 'house', name: 'Дом', build: buildHouse },
+    { id: 'car', name: 'Машина', build: buildCar },
+    { id: 'empty', name: 'Пустая сцена', build: () => new THREE.Group() },
     { id: 'vase', name: 'Ваза', build: buildExample },
     { id: 'box', name: 'Коробка', build: buildBox },
     { id: 'chest', name: 'Сундук', build: buildChest },
@@ -751,7 +832,7 @@ button,input{font:inherit;color:inherit}
   }
   modelsEl.addEventListener('click', (ev) => {
     const b = ev.target.closest('.chip');
-    if (b) guarded('tpl:' + b.dataset.id, () => loadBuiltin(b.dataset.id));
+    if (b) guarded('tpl:' + b.dataset.id, () => { loadBuiltin(b.dataset.id); if (b.dataset.id === 'empty') toast('Сцена пуста: добавьте фигуру.'); });
   });
   shapesEl.addEventListener('click', (ev) => {
     const b = ev.target.closest('.chip');
@@ -776,11 +857,126 @@ button,input{font:inherit;color:inherit}
 
   $('dupe').addEventListener('click', dupeSelected);
   $('del').addEventListener('click', removeSelected);
-  $('frame').addEventListener('click', fitCamera);
-  $('clear').addEventListener('click', () => guarded('clear', () => {
-    setModel(new THREE.Group(), 'scene', []);
-    toast('Сцена очищена.');
-  }));
+  // «Пустая сцена» в шаблонах заменяет прежний кнопочный сброс
+
+
+  // ---------- привязка, инспектор, быстрые действия ----------
+  function applySnap() {
+    tc.setTranslationSnap(ui.snap ? 0.25 : null);
+    tc.setRotationSnap(ui.snap ? THREE.MathUtils.degToRad(15) : null);
+    tc.setScaleSnap(ui.snap ? 0.25 : null);
+    $('snapBtn').setAttribute('aria-pressed', String(ui.snap));
+  }
+  $('snapBtn').addEventListener('click', () => { ui.snap = !ui.snap; applySnap(); toast(ui.snap ? 'Привязка включена: шаг 0,25 м, поворот 15°.' : 'Привязка выключена.'); });
+  applySnap();
+
+  function pushTransformCmd(m, before) {
+    if (before.p.equals(m.position) && before.q.equals(m.quaternion) && before.s.equals(m.scale)) return;
+    let st = before;
+    commit({
+      bytes: 200,
+      swap() {
+        const cur = { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() };
+        m.position.copy(st.p); m.quaternion.copy(st.q); m.scale.copy(st.s);
+        st = cur; updateInsp();
+      }
+    });
+  }
+  const DEG = Math.PI / 180, r3 = (v) => String(Math.round(v * 1000) / 1000);
+  function updateInsp() {
+    const m = selected, box = $('insp');
+    box.hidden = !(m && ui.tab === 'build');
+    if (box.hidden) return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const bb = m.geometry.boundingBox.getSize(new THREE.Vector3()), v = {
+      sx: bb.x * m.scale.x, sy: bb.y * m.scale.y, sz: bb.z * m.scale.z,
+      px: m.position.x, py: m.position.y, pz: m.position.z,
+      rx: m.rotation.x / DEG, ry: m.rotation.y / DEG, rz: m.rotation.z / DEG
+    };
+    box.querySelectorAll('input[data-f]').forEach((i) => { if (document.activeElement !== i) i.value = r3(Math.abs(v[i.dataset.f]) < 1e-6 ? 0 : v[i.dataset.f]); });
+  }
+  $('insp').addEventListener('change', (ev) => {
+    const i = ev.target.closest('input[data-f]'), m = selected;
+    if (!i || !m) return;
+    const val = parseFloat(i.value);
+    if (!isFinite(val)) { updateInsp(); return; }
+    const before = { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() }, f = i.dataset.f, bb = m.geometry.boundingBox.getSize(new THREE.Vector3());
+    if (f[0] === 's') {
+      const ax = f[1], base = bb[ax];
+      if (base < 1e-6 || val <= 0) { toast('Размер должен быть больше нуля.'); updateInsp(); return; }
+      m.scale[ax] = val / base;
+    } else if (f[0] === 'p') m.position[f[1]] = val;
+    else m.rotation[f[1]] = val * DEG;
+    pushTransformCmd(m, before);
+    updateInsp();
+  });
+  tc.addEventListener('change', () => { if (tc.object && tc.object !== pivot) updateInsp(); });
+
+  $('ground').addEventListener('click', () => {
+    const m = selected;
+    if (!m) { toast('Сначала выберите объект: коснитесь его.'); return; }
+    const before = { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() };
+    const box = new THREE.Box3().setFromObject(m);
+    m.position.y -= box.min.y;
+    pushTransformCmd(m, before);
+    updateInsp();
+  });
+
+  // зеркальная копия относительно плоскости X=0 (колёса, окна, симметричные детали); геометрия запекается в копию
+  $('mirror').addEventListener('click', () => {
+    const src = selected;
+    if (!src) { toast('Сначала выберите объект: коснитесь его.'); return; }
+    src.updateWorldMatrix(true, false);
+    const par = src.parent, L = new THREE.Matrix4().copy(par.matrixWorld).invert().multiply(new THREE.Matrix4().makeScale(-1, 1, 1)).multiply(src.matrixWorld);
+    const g = src.geometry.clone();
+    g.applyMatrix4(L);
+    const idx = g.index ? g.index.array : (() => { const a = new Uint32Array(g.attributes.position.count); for (let i = 0; i < a.length; i++) a[i] = i; return a; })();
+    for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; }
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    refreshBounds(g);
+    const m = new THREE.Mesh(g, src.material);
+    m.userData.label = (src.userData.label || 'Часть') + ' зеркало';
+    if (src.userData.paint) {
+      const list = src.userData.paint.map(cloneEntry);
+      m.userData.paint = list;
+      m.material = Array.isArray(src.material) ? list.map((e) => e.mat) : list[0].mat;
+    }
+    par.add(m);
+    commit(addMeshCmd(m, true));
+    select(m);
+    if (Math.abs(L.elements[12] - src.position.x) < 1e-4 && Math.abs(src.position.x) < 1e-4) toast('Объект стоит на оси: копия совпала с оригиналом. Сдвиньте объект по X.');
+  });
+
+  // виды камеры
+  $('views').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-v]');
+    if (!b) return;
+    if (b.dataset.v === 'fit') { fitCamera(); return; }
+    const t = controls.target, d = camera.position.distanceTo(t);
+    const dir = { front: [0, 0, 1], top: [0, 1, 0.0001], right: [1, 0, 0] }[b.dataset.v];
+    camera.position.copy(t).addScaledVector(new THREE.Vector3().fromArray(dir).normalize(), d);
+    controls.update();
+  });
+
+  // подсказки по вкладкам
+  const HELP = {
+    build: ['Как собрать модель', ['Нажмите «+ Куб»: фигура появится там, куда смотрит камера, и встанет на землю.', 'Потяните цветные стрелки или впишите размер и положение цифрами: так точнее.', '«Дубль» и «Зеркало» повторяют деталь, «На землю» опускает её на пол.', 'Крыша, окна, двери и колёса это тоже фигуры. Загляните в шаблоны «Дом» и «Машина».', '«Привязка» двигает по сетке 0,25 м. Сверху видны размеры и число полигонов.']],
+    sculpt: ['Как лепить', ['Коснитесь модели и ведите пальцем: «Тянуть» выпячивает, «Вдавить» продавливает.', 'У лёгкой фигуры мало вершин: нажмите «Детализация ×4», чтобы было что лепить.', '«Симметрия X» лепит одновременно обе половины.', 'Два пальца вращают и приближают, мазка при этом не будет.']],
+    edit: ['Как править сетку', ['Коснитесь объекта, затем граней или вершин: касание выбирает, повторное снимает.', 'Гизмо двигает, вращает или масштабирует выбранное.', '«Выдавить» вытягивает выбранный полигон: так делают окна, подоконники, ступени.', '«Авто-развёртка UV» нужна после правок, чтобы текстура легла ровно.']],
+    paint: ['Как красить', ['Выберите цвет и ведите пальцем по модели.', '«Заливка» красит всю деталь целиком, «Ластик» возвращает исходный цвет.', '«Фото» накладывает снимок на модель из текущего ракурса.', 'Сохранение: «Сохранить», размер текстур можно уменьшить.']]
+  };
+  function showHelp(on) {
+    $('helpSheet').hidden = !on;
+    $('helpBtn').setAttribute('aria-pressed', String(on));
+    if (!on) return;
+    const h = HELP[ui.tab];
+    $('helpTitle').textContent = h[0];
+    $('helpList').textContent = '';
+    h[1].forEach((t) => { const li = document.createElement('li'); li.textContent = t; $('helpList').appendChild(li); });
+  }
+  $('helpBtn').addEventListener('click', () => showHelp($('helpSheet').hidden));
+  $('helpClose').addEventListener('click', () => showHelp(false));
+  try { if (!localStorage.getItem('stylize-help')) { localStorage.setItem('stylize-help', '1'); setTimeout(() => showHelp(true), 600); } } catch (e) { /* без запоминания */ }
 
   // ---------- лепка: сварка вершин, соседи, нормали ----------
   // вершины на швах UV дублируются: сваривать нужно по позиции, иначе при лепке по швам появятся трещины
@@ -1135,14 +1331,52 @@ button,input{font:inherit;color:inherit}
   const view = { wire: false };
   const wires = new Map();
   const wireMat = new THREE.LineBasicMaterial({ color: 0x3d4a55, transparent: true, opacity: 0.6 });
+  // два копланарных треугольника с общей длинной диагональю считаем одним четырёхугольником: как в Blender
+  function quadPairs(g) {
+    const d = sculptData(g);
+    if (d.quad) return d.quad;
+    const P = g.attributes.position.array, rep = d.rep, tw = d.tw, T = tw.length / 3, W = d.W;
+    const pair = new Int32Array(T).fill(-1), fn = new Float32Array(T * 3), key = new Float64Array(T).fill(-1), by = new Map();
+    for (let t = 0; t < T; t++) {
+      const w = [tw[t * 3], tw[t * 3 + 1], tw[t * 3 + 2]];
+      if (w[0] === w[1] || w[1] === w[2] || w[0] === w[2]) continue;
+      const p = w.map((q) => [P[rep[q] * 3], P[rep[q] * 3 + 1], P[rep[q] * 3 + 2]]);
+      const ux = p[1][0] - p[0][0], uy = p[1][1] - p[0][1], uz = p[1][2] - p[0][2], vx = p[2][0] - p[0][0], vy = p[2][1] - p[0][1], vz = p[2][2] - p[0][2];
+      const x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx, l = Math.hypot(x, y, z);
+      if (l < 1e-20) continue;
+      fn[t * 3] = x / l; fn[t * 3 + 1] = y / l; fn[t * 3 + 2] = z / l;
+      let best = -1, bl = -1;
+      for (let k = 0; k < 3; k++) {
+        const a = p[k], b2 = p[(k + 1) % 3], len = (a[0] - b2[0]) ** 2 + (a[1] - b2[1]) ** 2 + (a[2] - b2[2]) ** 2;
+        if (len > bl) { bl = len; best = k; }
+      }
+      const a = w[best], b = w[(best + 1) % 3], kk = a < b ? a * W + b : b * W + a;
+      key[t] = kk;
+      const list = by.get(kk); if (list) list.push(t); else by.set(kk, [t]);
+    }
+    const diag = new Set();
+    let pairs = 0;
+    by.forEach((list, kk) => {
+      if (list.length !== 2) return;
+      const a = list[0], b = list[1];
+      if (fn[a * 3] * fn[b * 3] + fn[a * 3 + 1] * fn[b * 3 + 1] + fn[a * 3 + 2] * fn[b * 3 + 2] < 0.9999) return;
+      pair[a] = b; pair[b] = a; diag.add(kk); pairs++;
+    });
+    d.quad = { pair: pair, diag: diag, polys: T - pairs };
+    return d.quad;
+  }
   function buildWire(m) {
     // линии используют тот же буфер позиций, что и меш, поэтому лепка и правка сетки сразу видны на рёбрах
     const g = m.geometry, V = g.attributes.position.count, idx = g.index ? g.index.array : null, n = idx ? idx.length : V;
-    const seen = new Set(), out = [];
+    const seen = new Set(), out = [], sd = sculptData(g), dg = quadPairs(g).diag;
     for (let i = 0; i < n; i += 3) {
       for (let c = 0; c < 3; c++) {
         const a = idx ? idx[i + c] : i + c, b = idx ? idx[i + (c + 1) % 3] : i + (c + 1) % 3, k = a < b ? a * V + b : b * V + a;
-        if (!seen.has(k)) { seen.add(k); out.push(a, b); }
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const wa = sd.wid[a], wb = sd.wid[b];
+        if (dg.has(wa < wb ? wa * sd.W + wb : wb * sd.W + wa)) continue;
+        out.push(a, b);
       }
     }
     const eg = new THREE.BufferGeometry();
@@ -1178,7 +1412,8 @@ button,input{font:inherit;color:inherit}
     const d = sculptData(g);
     let e = 0;
     for (let w = 0; w < d.W; w++) e += d.nb[w].length;
-    return { v: d.W, e: e / 2, t: (g.index ? g.index.count : g.attributes.position.count) / 3 };
+    const q = quadPairs(g);
+    return { v: d.W, e: e / 2 - q.diag.size, p: q.polys, t: (g.index ? g.index.count : g.attributes.position.count) / 3 };
   }
 
   // ---------- редактор сетки ----------
@@ -1242,6 +1477,7 @@ button,input{font:inherit;color:inherit}
     pg.setAttribute('position', new THREE.BufferAttribute(ed.wp, 3));
     pg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(Wn * 3), 3));
     pg.setIndex(new THREE.BufferAttribute(Uint32Array.from(list), 1));
+    ed.pair = quadPairs(ed.mesh.geometry).pair;
     ed.ptsObj = new THREE.Points(pg, edPtsMat);
     ed.faceObj = new THREE.Mesh(new THREE.BufferGeometry(), edFaceMat);
     [ed.ptsObj, ed.faceObj].forEach((o) => { o.matrixAutoUpdate = false; o.frustumCulled = false; scene.add(o); });
@@ -1273,8 +1509,10 @@ button,input{font:inherit;color:inherit}
     uvDirty = true;
     edFaceGeometry();
     pressed($('selmode'), 'm', ed.selMode);
-    const fs = ed.selMode === 'face' ? ed.selF.size : edFacesOfSelection().size;
-    $('edInfo').textContent = 'Выбрано: граней ' + fs + ', вершин ' + sw.size + ' · треугольников в объекте: ' + fmt(ed.tw.length / 3);
+    const fsel = ed.selMode === 'face' ? ed.selF : edFacesOfSelection();
+    let polys = fsel.size;
+    fsel.forEach((t) => { const pr = ed.pair ? ed.pair[t] : -1; if (pr > t && fsel.has(pr)) polys--; });
+    $('edInfo').textContent = 'Выбрано: полигонов ' + polys + ', вершин ' + sw.size + ' · треугольников в объекте: ' + fmt(ed.tw.length / 3);
     syncGizmo();
   }
   function edFaceGeometry() {
@@ -1408,7 +1646,9 @@ button,input{font:inherit;color:inherit}
     if (hit.object !== ed.mesh) { select(hit.object); return; }
     const t = hit.faceIndex;
     if (ed.selMode === 'face') {
-      if (!ed.selF.delete(t)) ed.selF.add(t);
+      const grpT = [t], pr = ed.pair ? ed.pair[t] : -1;
+      if (pr >= 0) grpT.push(pr);
+      if (ed.selF.has(t)) grpT.forEach((x) => ed.selF.delete(x)); else grpT.forEach((x) => ed.selF.add(x));
     } else {
       const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
       let best = -1, bd = 48;
@@ -2126,7 +2366,7 @@ button,input{font:inherit;color:inherit}
     $('ring').hidden = true;
   }
   function pressed(wrap, attr, val) {
-    wrap.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
+    wrap.querySelectorAll('button[data-' + attr + ']').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
   }
   function setTab(t) {
     cancelStrokes();
@@ -2137,6 +2377,7 @@ button,input{font:inherit;color:inherit}
     if (t === 'edit' && !selected && meshes().length === 1) selected = meshes()[0];
     if (t === 'edit' && !selected) toast('Коснитесь объекта, чтобы править его сетку.');
     edSync(); setWire(view.wire); syncGizmo(); updateControls(); updateInfo(); updatePhotoOv();
+    if (!$('helpSheet').hidden) showHelp(true);
   }
   function setGizmo(g) {
     ui.gizmo = g;
@@ -2212,13 +2453,14 @@ button,input{font:inherit;color:inherit}
     const s = stats();
     $('hudName').textContent = modelName + ' · объектов: ' + s.n;
     const list = selected ? [selected] : meshes();
-    let v = 0, e = 0, t = 0;
-    list.forEach((o) => { const g = geoStats(o.geometry); v += g.v; e += g.e; t += g.t; });
-    $('hudStats').textContent = (selected ? (selected.userData.label || 'Объект') : 'Сцена') + ': вершин ' + fmt(v) + ' · рёбер ' + fmt(e) + ' · треугольников ' + fmt(t);
+    let v = 0, e = 0, t = 0, p = 0;
+    list.forEach((o) => { const g = geoStats(o.geometry); v += g.v; e += g.e; t += g.t; p += g.p; });
+    $('hudStats').textContent = (selected ? (selected.userData.label || 'Объект') : 'Сцена') + ': вершин ' + fmt(v) + ' · рёбер ' + fmt(e) + ' · полигонов ' + fmt(p) + ' (треуг. ' + fmt(t) + ')';
   }
   function updateInfo() {
     uvDirty = true;
     updateHud();
+    updateInsp();
     const m = selected || (meshes().length === 1 ? meshes()[0] : null);
     $('scInfo').textContent = m ? (m.userData.label || 'Объект') + ' · вершин: ' + fmt(m.geometry.attributes.position.count) : 'Коснитесь модели, чтобы выбрать объект';
   }
@@ -2389,8 +2631,8 @@ button,input{font:inherit;color:inherit}
   // ---------- старт ----------
   setTab('build');
   syncHistory();
-  setModel(buildExample(), 'Ваза', []);
-  seedExample();
+  setModel(buildHouse(), 'Дом', []);
+  fitCamera();
   edited = false;
 
   // для автотестов
