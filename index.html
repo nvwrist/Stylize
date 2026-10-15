@@ -865,7 +865,7 @@ button,input{font:inherit;color:inherit}
   }
 
   // ---------- лепка: жест ----------
-  let sc = null, pendingSculpt = null;
+  let sc = null;
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   function setRay(cx, cy) {
@@ -972,7 +972,6 @@ button,input{font:inherit;color:inherit}
   }
 
   function endSculpt() {
-    pendingSculpt = null;
     if (!sc) return;
     const s = sc; sc = null;
     if (!s.touched.size) return;
@@ -1133,7 +1132,21 @@ button,input{font:inherit;color:inherit}
   let last = null, tapDown = null;
   const paintDrawing = () => ui.tab === 'paint' && brush.mode !== 'rotate';
   const sculptDrawing = () => ui.tab === 'sculpt' && sculpt.tool !== 'orbit';
-  function cancelStrokes() { endPaint(); endSculpt(); tapDown = null; }
+  let pending = null;
+  function flushPending() {
+    if (!pending) return;
+    const p = pending; pending = null;
+    clearTimeout(p.timer);
+    if (pts.size !== 1) return;
+    if (p.kind === 'sculpt') { beginSculpt(p.x, p.y, p.inv); return; }
+    const h = pickEntry(p.x, p.y);
+    if (brush.mode === 'fill') { if (h) fillEntry(h.entry); return; }
+    paintStroke = new Map();
+    last = { x: p.x, y: p.y };
+    if (h) dab(h);
+  }
+  function cancelPending() { if (pending) { clearTimeout(pending.timer); pending = null; } }
+  function cancelStrokes() { cancelPending(); endPaint(); endSculpt(); tapDown = null; }
 
   canvas.addEventListener('pointerdown', (ev) => {
     pts.set(ev.pointerId, 1);
@@ -1143,22 +1156,15 @@ button,input{font:inherit;color:inherit}
       tapDown = { x: ev.clientX, y: ev.clientY, moved: false, gizmo: !!(tc.object && tc.axis) };
       return;
     }
-    if (sculptDrawing()) { pendingSculpt = { x: ev.clientX, y: ev.clientY, inv: ev.shiftKey || ev.ctrlKey }; return; }
-    if (!paintDrawing()) return;
-    const h = pickEntry(ev.clientX, ev.clientY);
-    if (brush.mode === 'fill') { if (h) fillEntry(h.entry); return; }
-    paintStroke = new Map();
-    last = { x: ev.clientX, y: ev.clientY };
-    if (h) dab(h);
+    if (sculptDrawing() || paintDrawing()) {
+      // штрих начинается после короткой паузы: если рядом опустится второй палец (жест приближения), мазка не будет
+      pending = { kind: sculptDrawing() ? 'sculpt' : 'paint', x: ev.clientX, y: ev.clientY, inv: ev.shiftKey || ev.ctrlKey };
+      pending.timer = setTimeout(flushPending, 70);
+    }
   });
   canvas.addEventListener('pointermove', (ev) => {
     moveRing(ev);
     if (tapDown && Math.hypot(ev.clientX - tapDown.x, ev.clientY - tapDown.y) > 6) tapDown.moved = true;
-    if (pendingSculpt && pts.size === 1) {
-      // штрих начинается с первого движения: если второй палец опустился раньше, лишнего мазка не будет
-      const p = pendingSculpt; pendingSculpt = null;
-      beginSculpt(p.x, p.y, p.inv);
-    }
     if (sc) { moveSculpt(ev.clientX, ev.clientY); return; }
     if (!paintStroke || pts.size !== 1 || !last) return;
     const dx = ev.clientX - last.x, dy = ev.clientY - last.y;
@@ -1170,10 +1176,7 @@ button,input{font:inherit;color:inherit}
     last = { x: ev.clientX, y: ev.clientY };
   });
   const up = (ev) => {
-    if (pendingSculpt && pts.size === 1 && ev.type === 'pointerup') {
-      const p = pendingSculpt; pendingSculpt = null;
-      beginSculpt(p.x, p.y, p.inv);
-    }
+    if (ev.type === 'pointerup') flushPending(); else cancelPending();
     if (tapDown && ev.type === 'pointerup' && pts.size === 1 && !tapDown.moved && !tapDown.gizmo && !tc.dragging) {
       const h = hitMeshes(ev.clientX, ev.clientY);
       select(h ? h.object : null);
