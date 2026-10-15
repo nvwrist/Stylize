@@ -41,8 +41,10 @@ button,input{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #stage{position:relative;flex:1;min-height:0;background:radial-gradient(circle at 50% 38%,var(--stage-a),var(--stage-b));overflow:hidden}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.hud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));top:10px;pointer-events:none;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.hud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));right:calc(max(16px,env(safe-area-inset-right,0px)) + 84px);top:10px;pointer-events:none;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
 .hud b{color:var(--fg);font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fab{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:10px;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;font-weight:500;cursor:pointer;touch-action:manipulation;z-index:2}
+.fab[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
 .ring{position:absolute;pointer-events:none;border:2px solid var(--accent);border-radius:50%;transform:translate(-50%,-50%);opacity:.8}
 .chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px;min-width:0}
 .chips::-webkit-scrollbar{display:none}
@@ -89,7 +91,8 @@ button,input{font:inherit;color:inherit}
 
   <main id="stage">
     <canvas id="gl"></canvas>
-    <div class="hud"><b id="hudName"></b><span id="hudHint"></span></div>
+    <div class="hud"><b id="hudName"></b><span id="hudStats"></span><span id="hudHint"></span></div>
+    <button class="fab" id="wireBtn" type="button" aria-pressed="false" title="Показать каркас модели">Каркас</button>
     <div class="ring" id="ring" hidden></div>
     <div class="sheet" id="sheet" hidden>
       <p class="lbl">Размер текстур в файле (меньше — легче модель)</p>
@@ -113,9 +116,10 @@ button,input{font:inherit;color:inherit}
   </main>
 
   <footer class="band bottom">
-    <div class="seg c3" id="tabs">
+    <div class="seg" id="tabs">
       <button type="button" data-tab="build" aria-pressed="true">Сборка</button>
       <button type="button" data-tab="sculpt" aria-pressed="false">Лепка</button>
+      <button type="button" data-tab="edit" aria-pressed="false">Сетка</button>
       <button type="button" data-tab="paint" aria-pressed="false">Краска</button>
     </div>
 
@@ -150,10 +154,9 @@ button,input{font:inherit;color:inherit}
         <button type="button" data-t="pinch" aria-pressed="false">Сжать</button>
         <button type="button" data-t="orbit" aria-pressed="false">Камера</button>
       </div>
-      <div class="seg c3 sm" id="toggles">
+      <div class="seg c2 sm" id="toggles">
         <button type="button" data-o="invert" aria-pressed="false">Вдавить</button>
         <button type="button" data-o="sym" aria-pressed="false">Симметрия X</button>
-        <button type="button" data-o="wire" aria-pressed="false">Сетка</button>
       </div>
       <div class="row">
         <label class="size"><span>Размер</span><input id="scSize" type="range" min="8" max="160" value="60"><output id="scSizeOut">60</output></label>
@@ -165,6 +168,31 @@ button,input{font:inherit;color:inherit}
         <button class="btn" id="subdiv" type="button">Детализация ×4</button>
         <p class="lbl" id="scInfo" style="flex:1"></p>
       </div>
+    </section>
+
+    <section class="panel" id="p-edit" hidden>
+      <div class="seg c2 sm" id="selmode">
+        <button type="button" data-m="face" aria-pressed="true">Грани</button>
+        <button type="button" data-m="vert" aria-pressed="false">Вершины</button>
+      </div>
+      <div class="seg sm" id="egizmo">
+        <button type="button" data-g="select" aria-pressed="false">Выбор</button>
+        <button type="button" data-g="translate" aria-pressed="true">Двигать</button>
+        <button type="button" data-g="rotate" aria-pressed="false">Вращать</button>
+        <button type="button" data-g="scale" aria-pressed="false">Размер</button>
+      </div>
+      <div class="seg sm">
+        <button type="button" id="eAll">Все</button>
+        <button type="button" id="eNone">Сбросить</button>
+        <button type="button" id="eExt">Выдавить</button>
+        <button type="button" id="eDel">Удалить</button>
+      </div>
+      <div class="seg c3 sm">
+        <button type="button" id="eFace">Создать грань</button>
+        <button type="button" id="eMerge">Слить вершины</button>
+        <button type="button" id="eFlip">Перевернуть</button>
+      </div>
+      <p class="lbl" id="edInfo"></p>
     </section>
 
     <section class="panel" id="p-paint" hidden>
@@ -220,6 +248,8 @@ button,input{font:inherit;color:inherit}
   const tc = new THREE.TransformControls(camera, canvas);
   tc.size = 1.1;
   scene.add(tc);
+  const pivot = new THREE.Object3D();
+  scene.add(pivot);
 
   const selBox = new THREE.BoxHelper(new THREE.Object3D(), 0x1d9bd1);
   selBox.visible = false;
@@ -236,9 +266,9 @@ button,input{font:inherit;color:inherit}
   resize();
 
   // ---------- состояние ----------
-  const ui = { tab: 'build', gizmo: 'select' };
+  const ui = { tab: 'build', gizmo: 'select', egizmo: 'translate' };
   const brush = { mode: 'paint', color: '#e4572e', size: 28 };
-  const sculpt = { tool: 'draw', size: 60, strength: 40, invert: false, sym: false, wire: false };
+  const sculpt = { tool: 'draw', size: 60, strength: 40, invert: false, sym: false };
   let root = null, modelName = 'scene', animations = [], selected = null, counter = 0;
   const dirty = new Set();
   let edited = false, armedId = null, armTimer = 0;
@@ -318,7 +348,7 @@ button,input{font:inherit;color:inherit}
     tex.anisotropy = maxAniso;
     if (old) { tex.wrapS = old.wrapS; tex.wrapT = old.wrapT; }
     m.map = tex;
-    m.wireframe = sculpt.wire;
+    m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1;
     m.needsUpdate = true;
     return { mat: m, size: size, canvas: c, ctx: g, orig: orig, tex: tex };
   }
@@ -366,6 +396,7 @@ button,input{font:inherit;color:inherit}
     selected = null; selBox.visible = false;
     clearHistory();
     if (root) { scene.remove(root); root.traverse(disposeMesh); }
+    endEdit();
     root = null; dirty.clear(); paintStroke = null; sc = null;
   }
 
@@ -428,16 +459,23 @@ button,input{font:inherit;color:inherit}
   function select(m) {
     selected = m || null;
     selBox.visible = !!selected && ui.tab === 'build';
-    syncGizmo(); updateObjects(); updateInfo();
+    edSync(); syncGizmo(); updateObjects(); updateInfo();
   }
   function syncGizmo() {
+    if (ui.tab === 'edit') {
+      if (ed && ui.egizmo !== 'select' && edSelWelds().size) { edPlacePivot(); tc.setMode(ui.egizmo); tc.attach(pivot); }
+      else tc.detach();
+      return;
+    }
     if (selected && ui.tab === 'build' && ui.gizmo !== 'select') { tc.setMode(ui.gizmo); tc.attach(selected); }
     else tc.detach();
   }
 
+  tc.addEventListener('objectChange', () => { if (tc.object === pivot) edDragMove(); });
   let dragBefore = null;
   tc.addEventListener('dragging-changed', (e) => {
     controls.enabled = !e.value;
+    if (tc.object === pivot) { if (e.value) edDragStart(); else edDragEnd(); return; }
     const m = tc.object;
     if (e.value && m) {
       dragBefore = { p: m.position.clone(), q: m.quaternion.clone(), s: m.scale.clone() };
@@ -548,7 +586,7 @@ button,input{font:inherit;color:inherit}
     commit(addMeshCmd(m, true));
     select(m);
     if (ui.gizmo === 'select') setGizmo('translate');
-    if (box.isEmpty()) fitCamera();
+    if (box.isEmpty()) fitCamera(); else focusOn(m);
   }
 
   // ---------- пример модели и шаблоны ----------
@@ -762,7 +800,7 @@ button,input{font:inherit;color:inherit}
       if (a === b || b === c || a === c) continue;
       fList[fillF[a]++] = f; fList[fillF[b]++] = f; fList[fillF[c]++] = f;
     }
-    d = { W: W, rep: rep, gStart: gStart, gList: gList, tw: tw, nb: nb, fStart: fStart, fList: fList, mark: new Uint32Array(W), stamp: 0 };
+    d = { wid: wid, W: W, rep: rep, gStart: gStart, gList: gList, tw: tw, nb: nb, fStart: fStart, fList: fList, mark: new Uint32Array(W), stamp: 0 };
     sdCache.set(geo, d);
     return d;
   }
@@ -1045,14 +1083,473 @@ button,input{font:inherit;color:inherit}
     if (!g) { toast('Достаточно деталей: больше ' + VERT_LIMIT + ' вершин телефон не потянет.'); return; }
     if (!g.attributes.normal) g.computeVertexNormals();
     m.geometry = g;
-    let other = old;
-    commit({
-      bytes: old.attributes.position.array.byteLength * 3,
-      swap() { const cur = m.geometry; m.geometry = other; other = cur; },
-      drop() { other.dispose(); }
-    });
+    commit(geomCmd(m, old));
     updateInfo();
   });
+
+
+  // ---------- замена геометрии одной командой истории ----------
+  function geomCmd(m, old) {
+    let other = old;
+    return {
+      bytes: old.attributes.position.array.byteLength * 3,
+      swap() {
+        const cur = m.geometry; m.geometry = other; other = cur;
+        if (ed && ed.mesh === m) edReload();
+        updateInfo();
+      },
+      drop() { other.dispose(); }
+    };
+  }
+
+  // ---------- просмотр сетки ----------
+  const view = { wire: false };
+  const wires = new Map();
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x3d4a55, transparent: true, opacity: 0.6 });
+  function buildWire(m) {
+    // линии используют тот же буфер позиций, что и меш, поэтому лепка и правка сетки сразу видны на рёбрах
+    const g = m.geometry, V = g.attributes.position.count, idx = g.index ? g.index.array : null, n = idx ? idx.length : V;
+    const seen = new Set(), out = [];
+    for (let i = 0; i < n; i += 3) {
+      for (let c = 0; c < 3; c++) {
+        const a = idx ? idx[i + c] : i + c, b = idx ? idx[i + (c + 1) % 3] : i + (c + 1) % 3, k = a < b ? a * V + b : b * V + a;
+        if (!seen.has(k)) { seen.add(k); out.push(a, b); }
+      }
+    }
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', g.attributes.position);
+    eg.setIndex(new THREE.BufferAttribute(Uint32Array.from(out), 1));
+    const line = new THREE.LineSegments(eg, wireMat);
+    line.matrixAutoUpdate = false; line.frustumCulled = false;
+    scene.add(line);
+    return { geo: g, line: line };
+  }
+  function dropWire(w) { scene.remove(w.line); w.line.geometry.dispose(); }
+  function syncWires() {
+    const on = view.wire || ui.tab === 'edit';
+    if (!on) { if (wires.size) { wires.forEach(dropWire); wires.clear(); } return; }
+    const list = meshes(), live = new Set(list);
+    wires.forEach((w, m) => { if (!live.has(m)) { dropWire(w); wires.delete(m); } });
+    list.forEach((m) => {
+      let w = wires.get(m);
+      if (w && w.geo !== m.geometry) { dropWire(w); w = null; }
+      if (!w) { w = buildWire(m); wires.set(m, w); }
+      w.line.visible = m.visible;
+      m.updateWorldMatrix(true, false);
+      w.line.matrix.copy(m.matrixWorld); w.line.matrixWorld.copy(m.matrixWorld);
+    });
+  }
+  function setWire(v) {
+    view.wire = v;
+    $('wireBtn').setAttribute('aria-pressed', String(v || ui.tab === 'edit'));
+  }
+  $('wireBtn').addEventListener('click', () => { if (ui.tab !== 'edit') setWire(!view.wire); });
+
+  function geoStats(g) {
+    const d = sculptData(g);
+    let e = 0;
+    for (let w = 0; w < d.W; w++) e += d.nb[w].length;
+    return { v: d.W, e: e / 2, t: (g.index ? g.index.count : g.attributes.position.count) / 3 };
+  }
+
+  // ---------- редактор сетки ----------
+  let ed = null;
+  const SEL_COLOR = [1, 0.54, 0.12], BASE_COLOR = [0.5, 0.56, 0.62];
+  const edFaceMat = new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const edPtsMat = new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true });
+
+  function edFromGeo(m) {
+    // модель правки: свёрнутые по позиции вершины (wp), а у каждого угла треугольника свой weld и своя UV
+    const g = m.geometry, d = sculptData(g), P = g.attributes.position.array, U = g.attributes.uv ? g.attributes.uv.array : null;
+    const V = g.attributes.position.count, idx = g.index ? g.index.array : null, n = idx ? idx.length : V;
+    const tw = new Int32Array(n), tuv = new Float32Array(n * 2), wp = new Float32Array(d.W * 3);
+    for (let i = 0; i < n; i++) {
+      const v = idx ? idx[i] : i;
+      tw[i] = d.wid[v];
+      if (U) { tuv[i * 2] = U[v * 2]; tuv[i * 2 + 1] = U[v * 2 + 1]; }
+    }
+    for (let w = 0; w < d.W; w++) { const i = d.rep[w] * 3; wp[w * 3] = P[i]; wp[w * 3 + 1] = P[i + 1]; wp[w * 3 + 2] = P[i + 2]; }
+    return { mesh: m, wp: wp, tw: tw, tuv: tuv, vw: d.wid, selMode: ed ? ed.selMode : 'face', selF: new Set(), selV: new Set(), order: [], base: null, drag: null, ptsObj: null, faceObj: null };
+  }
+
+  function edSync() {
+    if (ui.tab === 'edit' && selected) { if (!ed || ed.mesh !== selected) startEdit(selected); }
+    else endEdit();
+  }
+  function focusOn(m) {
+    // сдвигаем камеру вместе с точкой взгляда так, чтобы объект оказался в центре кадра
+    const box = new THREE.Box3().setFromObject(m);
+    if (box.isEmpty()) return;
+    const d = box.getCenter(new THREE.Vector3()).sub(controls.target);
+    controls.target.add(d); camera.position.add(d);
+    controls.update();
+  }
+  function startEdit(m) {
+    endEdit();
+    focusOn(m);
+    if (Array.isArray(m.material) && m.material.length > 1) { toast('Объект с несколькими материалами нельзя править в режиме сетки.'); return; }
+    ed = edFromGeo(m);
+    edOverlay(); edUpdate();
+  }
+  function edReload() { const m = ed.mesh, mode = ed.selMode; endEdit(); ed = null; startEdit(m); if (ed) { ed.selMode = mode; edUpdate(); } syncGizmo(); }
+  function edClearObjs() {
+    if (!ed) return;
+    [ed.ptsObj, ed.faceObj].forEach((o) => { if (o) { scene.remove(o); o.geometry.dispose(); } });
+    ed.ptsObj = ed.faceObj = null;
+  }
+  function endEdit() {
+    if (!ed) return;
+    if (ed.base) { ed.mesh.geometry.dispose(); ed.mesh.geometry = ed.base; ed.base = null; }
+    edClearObjs();
+    ed = null;
+    if (tc.object === pivot) tc.detach();
+  }
+
+  function edOverlay() {
+    edClearObjs();
+    const Wn = ed.wp.length / 3, used = new Uint8Array(Wn), list = [];
+    for (let i = 0; i < ed.tw.length; i++) if (!used[ed.tw[i]]) { used[ed.tw[i]] = 1; list.push(ed.tw[i]); }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(ed.wp, 3));
+    pg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(Wn * 3), 3));
+    pg.setIndex(new THREE.BufferAttribute(Uint32Array.from(list), 1));
+    ed.ptsObj = new THREE.Points(pg, edPtsMat);
+    ed.faceObj = new THREE.Mesh(new THREE.BufferGeometry(), edFaceMat);
+    [ed.ptsObj, ed.faceObj].forEach((o) => { o.matrixAutoUpdate = false; o.frustumCulled = false; scene.add(o); });
+  }
+
+  function edSelWelds() {
+    if (!ed) return new Set();
+    if (ed.selMode === 'vert') return ed.selV;
+    const s = new Set();
+    ed.selF.forEach((t) => { for (let c = 0; c < 3; c++) s.add(ed.tw[t * 3 + c]); });
+    return s;
+  }
+  function edFacesOfSelection() {
+    // грани для операций: в режиме граней выбранные, в режиме вершин те, у которых выбраны все три вершины
+    if (ed.selMode === 'face') return new Set(ed.selF);
+    const out = new Set();
+    for (let t = 0; t < ed.tw.length / 3; t++) if (ed.selV.has(ed.tw[t * 3]) && ed.selV.has(ed.tw[t * 3 + 1]) && ed.selV.has(ed.tw[t * 3 + 2])) out.add(t);
+    return out;
+  }
+
+  function edUpdate() {
+    if (!ed) return;
+    const Wn = ed.wp.length / 3, col = ed.ptsObj.geometry.attributes.color.array;
+    for (let w = 0; w < Wn; w++) { col[w * 3] = BASE_COLOR[0]; col[w * 3 + 1] = BASE_COLOR[1]; col[w * 3 + 2] = BASE_COLOR[2]; }
+    const sw = edSelWelds();
+    sw.forEach((w) => { col[w * 3] = SEL_COLOR[0]; col[w * 3 + 1] = SEL_COLOR[1]; col[w * 3 + 2] = SEL_COLOR[2]; });
+    ed.ptsObj.geometry.attributes.color.needsUpdate = true;
+    ed.ptsObj.visible = ed.selMode === 'vert';
+    edFaceGeometry();
+    pressed($('selmode'), 'm', ed.selMode);
+    const fs = ed.selMode === 'face' ? ed.selF.size : edFacesOfSelection().size;
+    $('edInfo').textContent = 'Выбрано: граней ' + fs + ', вершин ' + sw.size + ' · треугольников в объекте: ' + fmt(ed.tw.length / 3);
+    syncGizmo();
+  }
+  function edFaceGeometry() {
+    const sel = ed.selMode === 'face' ? ed.selF : new Set(), pos = new Float32Array(sel.size * 9);
+    let k = 0;
+    sel.forEach((t) => { for (let c = 0; c < 3; c++) { const w = ed.tw[t * 3 + c] * 3; pos[k++] = ed.wp[w]; pos[k++] = ed.wp[w + 1]; pos[k++] = ed.wp[w + 2]; } });
+    ed.faceObj.geometry.dispose();
+    ed.faceObj.geometry = new THREE.BufferGeometry();
+    ed.faceObj.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  }
+  function edPlacePivot() {
+    const ws = edSelWelds(), v = new THREE.Vector3();
+    ws.forEach((w) => { v.x += ed.wp[w * 3]; v.y += ed.wp[w * 3 + 1]; v.z += ed.wp[w * 3 + 2]; });
+    v.multiplyScalar(1 / (ws.size || 1));
+    ed.mesh.updateWorldMatrix(true, false);
+    pivot.position.copy(v.applyMatrix4(ed.mesh.matrixWorld));
+    pivot.quaternion.identity(); pivot.scale.set(1, 1, 1);
+    pivot.updateMatrixWorld();
+  }
+  function edSyncOverlayMatrix() {
+    if (!ed) return;
+    ed.mesh.updateWorldMatrix(true, false);
+    [ed.ptsObj, ed.faceObj].forEach((o) => { if (o) { o.matrix.copy(ed.mesh.matrixWorld); o.matrixWorld.copy(ed.mesh.matrixWorld); } });
+  }
+
+  // геометрия из модели правки: нормали сглаживаются по соседним граням до угла 40°, чтобы шар остался гладким, а куб острым
+  function edBuild() {
+    const tw = ed.tw, tuv = ed.tuv, wp = ed.wp, T = tw.length / 3, Wn = wp.length / 3, fn = new Float32Array(T * 3);
+    for (let t = 0; t < T; t++) {
+      const a = tw[t * 3] * 3, b = tw[t * 3 + 1] * 3, c = tw[t * 3 + 2] * 3;
+      const ux = wp[b] - wp[a], uy = wp[b + 1] - wp[a + 1], uz = wp[b + 2] - wp[a + 2], vx = wp[c] - wp[a], vy = wp[c + 1] - wp[a + 1], vz = wp[c + 2] - wp[a + 2];
+      let x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx;
+      const l = Math.hypot(x, y, z);
+      if (l > 1e-20) { fn[t * 3] = x / l; fn[t * 3 + 1] = y / l; fn[t * 3 + 2] = z / l; }
+    }
+    const fs = new Int32Array(Wn + 1);
+    for (let i = 0; i < tw.length; i++) fs[tw[i] + 1]++;
+    for (let w = 0; w < Wn; w++) fs[w + 1] += fs[w];
+    const fl = new Int32Array(tw.length), fill = fs.slice(0, Wn);
+    for (let t = 0; t < T; t++) for (let c = 0; c < 3; c++) fl[fill[tw[t * 3 + c]]++] = t;
+    const map = new Map(), pos = [], uv = [], nor = [], vw = [], index = new Uint32Array(tw.length);
+    for (let t = 0; t < T; t++) {
+      const fx = fn[t * 3], fy = fn[t * 3 + 1], fz = fn[t * 3 + 2];
+      for (let c = 0; c < 3; c++) {
+        const i = t * 3 + c, w = tw[i];
+        let nx = 0, ny = 0, nz = 0;
+        for (let q = fs[w]; q < fs[w + 1]; q++) {
+          const f = fl[q] * 3;
+          if (fn[f] * fx + fn[f + 1] * fy + fn[f + 2] * fz > 0.766) { nx += fn[f]; ny += fn[f + 1]; nz += fn[f + 2]; }
+        }
+        const l = Math.hypot(nx, ny, nz);
+        if (l > 1e-12) { nx /= l; ny /= l; nz /= l; } else { nx = fx; ny = fy; nz = fz; if (!(nx || ny || nz)) ny = 1; }
+        const u = tuv[i * 2], v = tuv[i * 2 + 1];
+        const key = w + '|' + u + '|' + v + '|' + Math.round(nx * 100) + ',' + Math.round(ny * 100) + ',' + Math.round(nz * 100);
+        let vi = map.get(key);
+        if (vi === undefined) {
+          vi = vw.length; map.set(key, vi); vw.push(w);
+          pos.push(wp[w * 3], wp[w * 3 + 1], wp[w * 3 + 2]); uv.push(u, v); nor.push(nx, ny, nz);
+        }
+        index[i] = vi;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(pos), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(Float32Array.from(nor), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(uv), 2));
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    refreshBounds(g);
+    return { geo: g, vw: Int32Array.from(vw) };
+  }
+  function edCommit() {
+    const m = ed.mesh;
+    let old = m.geometry;
+    if (ed.base) { old = ed.base; m.geometry.dispose(); ed.base = null; }
+    const r = edBuild();
+    m.geometry = r.geo; ed.vw = r.vw;
+    commit(geomCmd(m, old));
+    edOverlay(); edUpdate(); updateInfo();
+  }
+
+  // перетаскивание выделения гизмо: считаем в мировых координатах и переводим обратно в локальные
+  const _m4 = new THREE.Matrix4(), _v3 = new THREE.Vector3();
+  function edDragStart() {
+    if (!ed) return;
+    const ws = Array.from(edSelWelds()), sel = new Uint8Array(ed.wp.length / 3), orig = new Float32Array(ws.length * 3);
+    ws.forEach((w, k) => { sel[w] = 1; orig[k * 3] = ed.wp[w * 3]; orig[k * 3 + 1] = ed.wp[w * 3 + 1]; orig[k * 3 + 2] = ed.wp[w * 3 + 2]; });
+    pivot.updateMatrixWorld();
+    ed.drag = { ws: ws, sel: sel, orig: orig, m0: pivot.matrixWorld.clone() };
+    ed.base = ed.mesh.geometry;
+    ed.mesh.geometry = ed.base.clone();
+  }
+  function edDragMove() {
+    if (!ed || !ed.drag) return;
+    const dr = ed.drag, M = ed.mesh.matrixWorld;
+    pivot.updateMatrixWorld();
+    const L = new THREE.Matrix4().copy(M).invert().multiply(_m4.multiplyMatrices(pivot.matrixWorld, new THREE.Matrix4().copy(dr.m0).invert())).multiply(M);
+    dr.ws.forEach((w, k) => {
+      _v3.set(dr.orig[k * 3], dr.orig[k * 3 + 1], dr.orig[k * 3 + 2]).applyMatrix4(L);
+      ed.wp[w * 3] = _v3.x; ed.wp[w * 3 + 1] = _v3.y; ed.wp[w * 3 + 2] = _v3.z;
+    });
+    const P = ed.mesh.geometry.attributes.position.array, vw = ed.vw;
+    for (let i = 0; i < vw.length; i++) {
+      if (!dr.sel[vw[i]]) continue;
+      const w = vw[i] * 3; P[i * 3] = ed.wp[w]; P[i * 3 + 1] = ed.wp[w + 1]; P[i * 3 + 2] = ed.wp[w + 2];
+    }
+    ed.mesh.geometry.attributes.position.needsUpdate = true;
+    ed.ptsObj.geometry.attributes.position.needsUpdate = true;
+    edFaceGeometry();
+  }
+  function edDragEnd() {
+    if (!ed || !ed.drag) return;
+    const dr = ed.drag; ed.drag = null;
+    pivot.updateMatrixWorld();
+    if (pivot.matrixWorld.equals(dr.m0)) {
+      if (ed.base) { ed.mesh.geometry.dispose(); ed.mesh.geometry = ed.base; ed.base = null; }
+      return;
+    }
+    edCommit();
+  }
+
+  // выбор касанием
+  function edTap(x, y) {
+    if (!ed) {
+      const h0 = hitMeshes(x, y);
+      if (h0) select(h0.object);
+      return;
+    }
+    const hit = hitMeshes(x, y);
+    if (!hit) { ed.selF.clear(); ed.selV.clear(); ed.order.length = 0; edUpdate(); return; }
+    if (hit.object !== ed.mesh) { select(hit.object); return; }
+    const t = hit.faceIndex;
+    if (ed.selMode === 'face') {
+      if (!ed.selF.delete(t)) ed.selF.add(t);
+    } else {
+      const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
+      let best = -1, bd = 48;
+      for (let c = 0; c < 3; c++) {
+        const w = ed.tw[t * 3 + c];
+        v.set(ed.wp[w * 3], ed.wp[w * 3 + 1], ed.wp[w * 3 + 2]).applyMatrix4(ed.mesh.matrixWorld).project(camera);
+        const d = Math.hypot((v.x * 0.5 + 0.5) * r.width + r.left - x, (-v.y * 0.5 + 0.5) * r.height + r.top - y);
+        if (d < bd) { bd = d; best = w; }
+      }
+      if (best < 0) return;
+      if (ed.selV.delete(best)) ed.order.splice(ed.order.indexOf(best), 1);
+      else { ed.selV.add(best); ed.order.push(best); }
+    }
+    edUpdate();
+  }
+
+  function edSetMode(m) {
+    if (!ed || ed.selMode === m) return;
+    if (m === 'vert') {
+      const ws = edSelWelds();
+      ed.selV = new Set(ws); ed.order = Array.from(ws);
+    } else {
+      const f = edFacesOfSelection();
+      ed.selMode = 'face'; ed.selF = f;
+    }
+    ed.selMode = m;
+    if (m === 'vert') ed.selF = new Set();
+    else { ed.selV.clear(); ed.order.length = 0; }
+    edUpdate();
+  }
+
+  function edNeed(mode) {
+    if (!ed) { toast('Выберите объект: коснитесь его в этой вкладке.'); return false; }
+    if (mode === 'face' && ed.selMode !== 'face') { toast('Переключитесь на «Грани».'); return false; }
+    return true;
+  }
+  function edSelectAll() {
+    if (!ed) return;
+    if (ed.selMode === 'face') for (let t = 0; t < ed.tw.length / 3; t++) ed.selF.add(t);
+    else { ed.order.length = 0; for (let i = 0; i < ed.tw.length; i++) if (!ed.selV.has(ed.tw[i])) { ed.selV.add(ed.tw[i]); ed.order.push(ed.tw[i]); } }
+    edUpdate();
+  }
+  function edSelectNone() { if (!ed) return; ed.selF.clear(); ed.selV.clear(); ed.order.length = 0; edUpdate(); }
+
+  function edExtrude() {
+    if (!edNeed('face')) return;
+    if (!ed.selF.size) { toast('Выберите грани, которые нужно выдавить.'); return; }
+    const tw = ed.tw, tuv = ed.tuv, Wn = ed.wp.length / 3;
+    const cnt = new Map();
+    ed.selF.forEach((t) => { for (let c = 0; c < 3; c++) { const a = tw[t * 3 + c], b = tw[t * 3 + (c + 1) % 3], k = a < b ? a * Wn + b : b * Wn + a; cnt.set(k, (cnt.get(k) || 0) + 1); } });
+    const side = [], nw = new Map(), nx = [0, 0, 0];
+    ed.selF.forEach((t) => {
+      const a0 = ed.wp.subarray(tw[t * 3] * 3, tw[t * 3] * 3 + 3), b0 = ed.wp.subarray(tw[t * 3 + 1] * 3, tw[t * 3 + 1] * 3 + 3), c0 = ed.wp.subarray(tw[t * 3 + 2] * 3, tw[t * 3 + 2] * 3 + 3);
+      const ux = b0[0] - a0[0], uy = b0[1] - a0[1], uz = b0[2] - a0[2], vx = c0[0] - a0[0], vy = c0[1] - a0[1], vz = c0[2] - a0[2];
+      nx[0] += uy * vz - uz * vy; nx[1] += uz * vx - ux * vz; nx[2] += ux * vy - uy * vx;
+      for (let c = 0; c < 3; c++) {
+        const a = tw[t * 3 + c], b = tw[t * 3 + (c + 1) % 3], k = a < b ? a * Wn + b : b * Wn + a;
+        if (!nw.has(a)) nw.set(a, Wn + nw.size);
+        if (cnt.get(k) === 1) side.push([a, b, tuv[(t * 3 + c) * 2], tuv[(t * 3 + c) * 2 + 1], tuv[(t * 3 + (c + 1) % 3) * 2], tuv[(t * 3 + (c + 1) % 3) * 2 + 1]]);
+      }
+    });
+    const nl = Math.hypot(nx[0], nx[1], nx[2]) || 1;
+    ed.mesh.geometry.computeBoundingBox();
+    const bs = ed.mesh.geometry.boundingBox.getSize(_v3), dist = Math.max(bs.x, bs.y, bs.z) * 0.1;
+    const wp = new Float32Array((Wn + nw.size) * 3);
+    wp.set(ed.wp);
+    nw.forEach((n, a) => { wp[n * 3] = ed.wp[a * 3] + (nx[0] / nl) * dist; wp[n * 3 + 1] = ed.wp[a * 3 + 1] + (nx[1] / nl) * dist; wp[n * 3 + 2] = ed.wp[a * 3 + 2] + (nx[2] / nl) * dist; });
+    const T0 = tw.length / 3, ntw = new Int32Array(tw.length + side.length * 6), ntuv = new Float32Array(tuv.length + side.length * 12);
+    ntw.set(tw); ntuv.set(tuv);
+    ed.selF.forEach((t) => { for (let c = 0; c < 3; c++) ntw[t * 3 + c] = nw.get(tw[t * 3 + c]); });
+    side.forEach((s, k) => {
+      const a = s[0], b = s[1], a2 = nw.get(a), b2 = nw.get(b), o = (T0 + k * 2) * 3;
+      ntw[o] = a; ntw[o + 1] = b; ntw[o + 2] = b2; ntw[o + 3] = a; ntw[o + 4] = b2; ntw[o + 5] = a2;
+      ntuv.set([s[2], s[3], s[4], s[5], s[4], s[5], s[2], s[3], s[4], s[5], s[2], s[3]], o * 2);
+    });
+    ed.wp = wp; ed.tw = ntw; ed.tuv = ntuv;
+    edCommit();
+    if (ui.egizmo === 'select') setEGizmo('translate');
+    toast('Грани выдавлены. Потяните гизмо, чтобы задать высоту.');
+  }
+
+  function edDelete() {
+    if (!ed) { edNeed(); return; }
+    const kill = ed.selMode === 'face' ? new Set(ed.selF) : (() => {
+      const s = new Set();
+      for (let t = 0; t < ed.tw.length / 3; t++) if (ed.selV.has(ed.tw[t * 3]) || ed.selV.has(ed.tw[t * 3 + 1]) || ed.selV.has(ed.tw[t * 3 + 2])) s.add(t);
+      return s;
+    })();
+    if (!kill.size) { toast('Сначала выберите, что удалить.'); return; }
+    if (kill.size >= ed.tw.length / 3) { toast('Нельзя удалить все грани: используйте «Удалить» во вкладке «Сборка».'); return; }
+    const keep = ed.tw.length / 3 - kill.size, ntw = new Int32Array(keep * 3), ntuv = new Float32Array(keep * 6);
+    let k = 0;
+    for (let t = 0; t < ed.tw.length / 3; t++) {
+      if (kill.has(t)) continue;
+      ntw.set(ed.tw.subarray(t * 3, t * 3 + 3), k * 3); ntuv.set(ed.tuv.subarray(t * 6, t * 6 + 6), k * 6); k++;
+    }
+    ed.tw = ntw; ed.tuv = ntuv; ed.selF.clear(); ed.selV.clear(); ed.order.length = 0;
+    edCommit();
+  }
+
+  function edFlip() {
+    if (!ed) { edNeed(); return; }
+    const f = edFacesOfSelection();
+    if (!f.size) { toast('Выберите грани, у которых нужно перевернуть нормаль.'); return; }
+    f.forEach((t) => {
+      const w1 = ed.tw[t * 3 + 1]; ed.tw[t * 3 + 1] = ed.tw[t * 3 + 2]; ed.tw[t * 3 + 2] = w1;
+      const u = ed.tuv.slice(t * 6 + 2, t * 6 + 4); ed.tuv.copyWithin(t * 6 + 2, t * 6 + 4, t * 6 + 6); ed.tuv.set(u, t * 6 + 4);
+    });
+    edCommit();
+  }
+
+  function edMerge() {
+    if (!ed) { edNeed(); return; }
+    const ws = Array.from(edSelWelds());
+    if (ws.length < 2) { toast('Выберите две вершины или больше, чтобы слить их в одну.'); return; }
+    const to = ws[0], c = [0, 0, 0];
+    ws.forEach((w) => { c[0] += ed.wp[w * 3]; c[1] += ed.wp[w * 3 + 1]; c[2] += ed.wp[w * 3 + 2]; });
+    ed.wp[to * 3] = c[0] / ws.length; ed.wp[to * 3 + 1] = c[1] / ws.length; ed.wp[to * 3 + 2] = c[2] / ws.length;
+    const set = new Set(ws), ntw = [], ntuv = [];
+    for (let t = 0; t < ed.tw.length / 3; t++) {
+      const a = set.has(ed.tw[t * 3]) ? to : ed.tw[t * 3], b = set.has(ed.tw[t * 3 + 1]) ? to : ed.tw[t * 3 + 1], d = set.has(ed.tw[t * 3 + 2]) ? to : ed.tw[t * 3 + 2];
+      if (a === b || b === d || a === d) continue;
+      ntw.push(a, b, d);
+      for (let q = 0; q < 6; q++) ntuv.push(ed.tuv[t * 6 + q]);
+    }
+    if (!ntw.length) { toast('После слияния не осталось граней.'); return; }
+    ed.tw = Int32Array.from(ntw); ed.tuv = Float32Array.from(ntuv);
+    ed.selMode = 'vert'; ed.selV = new Set([to]); ed.order = [to]; ed.selF.clear();
+    edCommit();
+  }
+
+  function edMakeFace() {
+    if (!ed) { edNeed(); return; }
+    if (ed.selMode !== 'vert') { toast('Переключитесь на «Вершины» и выберите 3 точки или больше по порядку обхода.'); return; }
+    const o = ed.order.filter((w) => ed.selV.has(w));
+    if (o.length < 3) { toast('Нужно минимум 3 вершины.'); return; }
+    const P = (w) => [ed.wp[w * 3], ed.wp[w * 3 + 1], ed.wp[w * 3 + 2]];
+    const p0 = P(o[0]), p1 = P(o[1]), p2 = P(o[2]);
+    let n = [(p1[1] - p0[1]) * (p2[2] - p0[2]) - (p1[2] - p0[2]) * (p2[1] - p0[1]), (p1[2] - p0[2]) * (p2[0] - p0[0]) - (p1[0] - p0[0]) * (p2[2] - p0[2]), (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0])];
+    const cen = [0, 0, 0];
+    o.forEach((w) => { const p = P(w); cen[0] += p[0] / o.length; cen[1] += p[1] / o.length; cen[2] += p[2] / o.length; });
+    // обращаем грань лицом к камере
+    const cp = ed.mesh.worldToLocal(camera.position.clone());
+    let order = o;
+    if (n[0] * (cp.x - cen[0]) + n[1] * (cp.y - cen[1]) + n[2] * (cp.z - cen[2]) < 0) { order = o.slice().reverse(); n = n.map((q) => -q); }
+    // временная UV: плоская проекция в маленький угол атласа, пока нет автоматической развёртки
+    const ax = [Math.abs(n[0]), Math.abs(n[1]), Math.abs(n[2])], drop = ax.indexOf(Math.max(ax[0], ax[1], ax[2])), ia = (drop + 1) % 3, ib = (drop + 2) % 3;
+    let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+    order.forEach((w) => { const p = P(w); lo = [Math.min(lo[0], p[ia]), Math.min(lo[1], p[ib])]; hi = [Math.max(hi[0], p[ia]), Math.max(hi[1], p[ib])]; });
+    const sc2 = 0.05 / (Math.max(hi[0] - lo[0], hi[1] - lo[1]) || 1);
+    const uvOf = (w) => { const p = P(w); return [0.94 + (p[ia] - lo[0]) * sc2, 0.94 + (p[ib] - lo[1]) * sc2]; };
+    const addTw = [], addUv = [];
+    for (let i = 1; i < order.length - 1; i++) {
+      [order[0], order[i], order[i + 1]].forEach((w) => { addTw.push(w); addUv.push(...uvOf(w)); });
+    }
+    const ntw = new Int32Array(ed.tw.length + addTw.length), ntuv = new Float32Array(ed.tuv.length + addUv.length);
+    ntw.set(ed.tw); ntw.set(addTw, ed.tw.length); ntuv.set(ed.tuv); ntuv.set(addUv, ed.tuv.length);
+    ed.tw = ntw; ed.tuv = ntuv;
+    edCommit();
+    toast('Грань создана. Её UV временная, красьте её после автоматической развёртки.');
+  }
+
+  function setEGizmo(g) { ui.egizmo = g; pressed($('egizmo'), 'g', g); syncGizmo(); }
+  $('selmode').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-m]'); if (b) edSetMode(b.dataset.m); });
+  $('egizmo').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-g]'); if (b) setEGizmo(b.dataset.g); });
+  $('eAll').addEventListener('click', edSelectAll);
+  $('eNone').addEventListener('click', edSelectNone);
+  $('eExt').addEventListener('click', edExtrude);
+  $('eDel').addEventListener('click', edDelete);
+  $('eFace').addEventListener('click', edMakeFace);
+  $('eMerge').addEventListener('click', edMerge);
+  $('eFlip').addEventListener('click', edFlip);
 
   // ---------- рисование (текстура) ----------
   const pickEntry = (cx, cy) => {
@@ -1152,7 +1649,7 @@ button,input{font:inherit;color:inherit}
     pts.set(ev.pointerId, 1);
     if (pts.size > 1) { cancelStrokes(); return; }
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-    if (ui.tab === 'build') {
+    if (ui.tab === 'build' || ui.tab === 'edit') {
       tapDown = { x: ev.clientX, y: ev.clientY, moved: false, gizmo: !!(tc.object && tc.axis) };
       return;
     }
@@ -1178,8 +1675,11 @@ button,input{font:inherit;color:inherit}
   const up = (ev) => {
     if (ev.type === 'pointerup') flushPending(); else cancelPending();
     if (tapDown && ev.type === 'pointerup' && pts.size === 1 && !tapDown.moved && !tapDown.gizmo && !tc.dragging) {
-      const h = hitMeshes(ev.clientX, ev.clientY);
-      select(h ? h.object : null);
+      if (ui.tab === 'edit') edTap(ev.clientX, ev.clientY);
+      else {
+        const h = hitMeshes(ev.clientX, ev.clientY);
+        select(h ? h.object : null);
+      }
     }
     tapDown = null;
     pts.delete(ev.pointerId);
@@ -1204,6 +1704,7 @@ button,input{font:inherit;color:inherit}
   // ---------- вкладки, режимы, панели ----------
   const hints = {
     build: 'Коснитесь объекта, чтобы выбрать. Один палец вращает, два приближают',
+    edit: 'Коснитесь грани или вершины, чтобы выбрать или снять выбор. Один палец вращает',
     draw: 'Тянет поверхность наружу. «Вдавить» — внутрь',
     smooth: 'Сглаживает неровности',
     inflate: 'Раздувает поверхность вдоль нормалей',
@@ -1222,7 +1723,7 @@ button,input{font:inherit;color:inherit}
     controls.mouseButtons = drawing
       ? { LEFT: -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
       : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-    $('hudHint').textContent = hints[ui.tab === 'build' ? 'build' : ui.tab === 'sculpt' ? sculpt.tool : brush.mode];
+    $('hudHint').textContent = hints[ui.tab === 'build' ? 'build' : ui.tab === 'edit' ? 'edit' : ui.tab === 'sculpt' ? sculpt.tool : brush.mode];
     $('ring').hidden = true;
   }
   function pressed(wrap, attr, val) {
@@ -1232,9 +1733,11 @@ button,input{font:inherit;color:inherit}
     cancelStrokes();
     ui.tab = t;
     pressed($('tabs'), 'tab', t);
-    ['build', 'sculpt', 'paint'].forEach((n) => { $('p-' + n).hidden = n !== t; });
+    ['build', 'sculpt', 'edit', 'paint'].forEach((n) => { $('p-' + n).hidden = n !== t; });
     selBox.visible = !!selected && t === 'build';
-    syncGizmo(); updateControls(); updateInfo();
+    if (t === 'edit' && !selected && meshes().length === 1) selected = meshes()[0];
+    if (t === 'edit' && !selected) toast('Коснитесь объекта, чтобы править его сетку.');
+    edSync(); setWire(view.wire); syncGizmo(); updateControls(); updateInfo();
   }
   function setGizmo(g) {
     ui.gizmo = g;
@@ -1254,7 +1757,6 @@ button,input{font:inherit;color:inherit}
     const o = b.dataset.o;
     sculpt[o] = !sculpt[o];
     b.setAttribute('aria-pressed', String(sculpt[o]));
-    if (o === 'wire') allEntries().forEach((e) => { e.mat.wireframe = sculpt.wire; });
   });
   $('scSize').addEventListener('input', (ev) => { sculpt.size = +ev.target.value; $('scSizeOut').textContent = ev.target.value; });
   $('scStr').addEventListener('input', (ev) => { sculpt.strength = +ev.target.value; $('scStrOut').textContent = ev.target.value; });
@@ -1305,7 +1807,11 @@ button,input{font:inherit;color:inherit}
   const fmt = (n) => (n >= 10000 ? Math.round(n / 1000) + ' тыс.' : String(Math.round(n)));
   function updateHud() {
     const s = stats();
-    $('hudName').textContent = modelName + ' · объектов: ' + s.n + ' · треугольников: ' + fmt(s.t);
+    $('hudName').textContent = modelName + ' · объектов: ' + s.n;
+    const list = selected ? [selected] : meshes();
+    let v = 0, e = 0, t = 0;
+    list.forEach((o) => { const g = geoStats(o.geometry); v += g.v; e += g.e; t += g.t; });
+    $('hudStats').textContent = (selected ? (selected.userData.label || 'Объект') : 'Сцена') + ': вершин ' + fmt(v) + ' · рёбер ' + fmt(e) + ' · треугольников ' + fmt(t);
   }
   function updateInfo() {
     updateHud();
@@ -1484,12 +1990,13 @@ button,input{font:inherit;color:inherit}
   edited = false;
 
   // для автотестов
-  window.__stylize = { THREE: THREE, camera: camera, canvas: canvas, getRoot: () => root, meshes: meshes, select: select, setTab: setTab, setTool: setTool, sculpt: sculpt, undoStack: undoStack, redoStack: redoStack, addShape: addShape, controls: controls };
+  window.__stylize = { THREE: THREE, camera: camera, canvas: canvas, getRoot: () => root, meshes: meshes, select: select, setTab: setTab, setTool: setTool, sculpt: sculpt, undoStack: undoStack, redoStack: redoStack, addShape: addShape, controls: controls, ed: () => ed, edExtrude: edExtrude, edDelete: edDelete, edMakeFace: edMakeFace, edMerge: edMerge, edFlip: edFlip, edSetMode: edSetMode, edSelectAll: edSelectAll, setWire: setWire, wires: wires, pivot: pivot, tc: tc };
 
   renderer.setAnimationLoop(() => {
     controls.update();
     if (dirty.size) { dirty.forEach((e) => { e.tex.needsUpdate = true; }); dirty.clear(); }
     if (selected && selBox.visible) selBox.setFromObject(selected);
+    syncWires(); edSyncOverlayMatrix();
     renderer.render(scene, camera);
   });
 })();
