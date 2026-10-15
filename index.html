@@ -45,6 +45,10 @@ button,input{font:inherit;color:inherit}
 .hud b{color:var(--fg);font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fab{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:10px;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px;font-weight:500;cursor:pointer;touch-action:manipulation;z-index:2}
 .fab[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.fab.two{top:54px}
+.uvbox{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:10px;width:min(62vw,40vh,320px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;z-index:3}
+.uvbox canvas{width:100%;aspect-ratio:1;display:block;border-radius:6px;background:var(--bg)}
+.uvbox p{margin:0;font-size:12px;color:var(--muted)}
 .ring{position:absolute;pointer-events:none;border:2px solid var(--accent);border-radius:50%;transform:translate(-50%,-50%);opacity:.8}
 .chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px;min-width:0}
 .chips::-webkit-scrollbar{display:none}
@@ -93,6 +97,8 @@ button,input{font:inherit;color:inherit}
     <canvas id="gl"></canvas>
     <div class="hud"><b id="hudName"></b><span id="hudStats"></span><span id="hudHint"></span></div>
     <button class="fab" id="wireBtn" type="button" aria-pressed="false" title="Показать каркас модели">Каркас</button>
+    <button class="fab two" id="uvBtn" type="button" aria-pressed="false" title="Показать UV-развёртку">UV</button>
+    <div class="uvbox" id="uvBox" hidden><canvas id="uvCv" width="512" height="512"></canvas><p id="uvInfo"></p></div>
     <div class="ring" id="ring" hidden></div>
     <div class="sheet" id="sheet" hidden>
       <p class="lbl">Размер текстур в файле (меньше — легче модель)</p>
@@ -191,6 +197,10 @@ button,input{font:inherit;color:inherit}
         <button type="button" id="eFace">Создать грань</button>
         <button type="button" id="eMerge">Слить вершины</button>
         <button type="button" id="eFlip">Перевернуть</button>
+      </div>
+      <div class="seg c2 sm">
+        <button type="button" id="eUnwrap">Авто-развёртка UV</button>
+        <button type="button" id="eUv">Показать UV</button>
       </div>
       <p class="lbl" id="edInfo"></p>
     </section>
@@ -1241,6 +1251,7 @@ button,input{font:inherit;color:inherit}
     sw.forEach((w) => { col[w * 3] = SEL_COLOR[0]; col[w * 3 + 1] = SEL_COLOR[1]; col[w * 3 + 2] = SEL_COLOR[2]; });
     ed.ptsObj.geometry.attributes.color.needsUpdate = true;
     ed.ptsObj.visible = ed.selMode === 'vert';
+    uvDirty = true;
     edFaceGeometry();
     pressed($('selmode'), 'm', ed.selMode);
     const fs = ed.selMode === 'face' ? ed.selF.size : edFacesOfSelection().size;
@@ -1271,8 +1282,9 @@ button,input{font:inherit;color:inherit}
   }
 
   // геометрия из модели правки: нормали сглаживаются по соседним граням до угла 40°, чтобы шар остался гладким, а куб острым
-  function edBuild() {
-    const tw = ed.tw, tuv = ed.tuv, wp = ed.wp, T = tw.length / 3, Wn = wp.length / 3, fn = new Float32Array(T * 3);
+  function edBuild(E) {
+    E = E || ed;
+    const tw = E.tw, tuv = E.tuv, wp = E.wp, T = tw.length / 3, Wn = wp.length / 3, fn = new Float32Array(T * 3);
     for (let t = 0; t < T; t++) {
       const a = tw[t * 3] * 3, b = tw[t * 3 + 1] * 3, c = tw[t * 3 + 2] * 3;
       const ux = wp[b] - wp[a], uy = wp[b + 1] - wp[a + 1], uz = wp[b + 2] - wp[a + 2], vx = wp[c] - wp[a], vy = wp[c + 1] - wp[a + 1], vz = wp[c + 2] - wp[a + 2];
@@ -1537,7 +1549,7 @@ button,input{font:inherit;color:inherit}
     ntw.set(ed.tw); ntw.set(addTw, ed.tw.length); ntuv.set(ed.tuv); ntuv.set(addUv, ed.tuv.length);
     ed.tw = ntw; ed.tuv = ntuv;
     edCommit();
-    toast('Грань создана. Её UV временная, красьте её после автоматической развёртки.');
+    toast('Грань создана. Её UV временная: нажмите «Авто-развёртка UV», чтобы красить её.');
   }
 
   function setEGizmo(g) { ui.egizmo = g; pressed($('egizmo'), 'g', g); syncGizmo(); }
@@ -1551,12 +1563,226 @@ button,input{font:inherit;color:inherit}
   $('eMerge').addEventListener('click', edMerge);
   $('eFlip').addEventListener('click', edFlip);
 
+
+  // ---------- автоматическая развёртка UV ----------
+  // грани группируются в острова по близким нормалям, каждый остров проецируется на свою плоскость,
+  // острова укладываются полками в атлас с одинаковым масштабом, чтобы плотность текселей была ровной
+  function unwrapModel(E) {
+    const COS = 0.45, PAD = 0.004, wp = E.wp, tw = E.tw, T = tw.length / 3, Wn = wp.length / 3;
+    const fn = new Float32Array(T * 3), edges = new Map(), adj = new Array(T);
+    for (let t = 0; t < T; t++) {
+      adj[t] = [];
+      const a = tw[t * 3] * 3, b = tw[t * 3 + 1] * 3, c = tw[t * 3 + 2] * 3;
+      const ux = wp[b] - wp[a], uy = wp[b + 1] - wp[a + 1], uz = wp[b + 2] - wp[a + 2], vx = wp[c] - wp[a], vy = wp[c + 1] - wp[a + 1], vz = wp[c + 2] - wp[a + 2];
+      const x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx, l = Math.hypot(x, y, z);
+      if (l > 1e-20) { fn[t * 3] = x / l; fn[t * 3 + 1] = y / l; fn[t * 3 + 2] = z / l; }
+      for (let k = 0; k < 3; k++) {
+        const p = tw[t * 3 + k], q = tw[t * 3 + (k + 1) % 3], key = p < q ? p * Wn + q : q * Wn + p, list = edges.get(key);
+        if (list) { list.forEach((o) => { adj[t].push(o); adj[o].push(t); }); list.push(t); } else edges.set(key, [t]);
+      }
+    }
+    const chartOf = new Int32Array(T).fill(-1), charts = [];
+    for (let s0 = 0; s0 < T; s0++) {
+      if (chartOf[s0] >= 0) continue;
+      const id = charts.length, tris = [s0], sum = [fn[s0 * 3], fn[s0 * 3 + 1], fn[s0 * 3 + 2]];
+      chartOf[s0] = id;
+      for (let qi = 0; qi < tris.length; qi++) {
+        adj[tris[qi]].forEach((f) => {
+          if (chartOf[f] >= 0) return;
+          const l = Math.hypot(sum[0], sum[1], sum[2]) || 1, d = (fn[f * 3] * sum[0] + fn[f * 3 + 1] * sum[1] + fn[f * 3 + 2] * sum[2]) / l;
+          const flat = !(fn[f * 3] || fn[f * 3 + 1] || fn[f * 3 + 2]);
+          if (d > COS || flat) { chartOf[f] = id; tris.push(f); sum[0] += fn[f * 3]; sum[1] += fn[f * 3 + 1]; sum[2] += fn[f * 3 + 2]; }
+        });
+      }
+      charts.push({ tris: tris, n: sum });
+    }
+    // проекция каждого острова
+    const xy = new Float32Array(T * 6);
+    charts.forEach((ch) => {
+      let nx = ch.n[0], ny = ch.n[1], nz = ch.n[2];
+      const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      if (!l || (!nx && !ny && !nz)) ny = 1;
+      let tx = -nx * ny, ty = 1 - ny * ny, tz = -nz * ny;
+      if (Math.hypot(tx, ty, tz) < 1e-3) { tx = 1 - nx * nx; ty = -ny * nx; tz = -nz * nx; }
+      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      const bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      ch.tris.forEach((t) => {
+        for (let c = 0; c < 3; c++) {
+          const w = tw[t * 3 + c] * 3, px = wp[w], py = wp[w + 1], pz = wp[w + 2];
+          const u = px * tx + py * ty + pz * tz, v = px * bx + py * by + pz * bz;
+          xy[(t * 3 + c) * 2] = u; xy[(t * 3 + c) * 2 + 1] = v;
+          x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v);
+        }
+      });
+      ch.x0 = x0; ch.y0 = y0; ch.w = Math.max(x1 - x0, 1e-6); ch.h = Math.max(y1 - y0, 1e-6);
+    });
+    // упаковка полками, масштаб подбирается бинарным поиском
+    const order = charts.slice().sort((a, b) => b.h - a.h);
+    function pack(sc) {
+      let x = PAD, y = PAD, rowH = 0;
+      for (let i = 0; i < order.length; i++) {
+        const c = order[i], w = c.w * sc, h = c.h * sc;
+        if (w + 2 * PAD > 1) return false;
+        if (x + w + PAD > 1) { x = PAD; y += rowH + PAD; rowH = 0; }
+        if (y + h + PAD > 1) return false;
+        c.ox = x; c.oy = y; x += w + PAD; rowH = Math.max(rowH, h);
+      }
+      return true;
+    }
+    let maxDim = 1e-6;
+    charts.forEach((c) => { maxDim = Math.max(maxDim, c.w, c.h); });
+    let lo = 0, hi = 1 / maxDim;
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (pack(mid)) lo = mid; else hi = mid; }
+    if (!pack(lo || 1e-4)) pack(1e-4);
+    const sc = lo || 1e-4, out = new Float32Array(T * 6);
+    charts.forEach((ch) => ch.tris.forEach((t) => {
+      for (let c = 0; c < 3; c++) {
+        out[(t * 3 + c) * 2] = ch.ox + (xy[(t * 3 + c) * 2] - ch.x0) * sc;
+        out[(t * 3 + c) * 2 + 1] = ch.oy + (xy[(t * 3 + c) * 2 + 1] - ch.y0) * sc;
+      }
+    }));
+    return { uv: out, charts: charts.length };
+  }
+
+  // перенос уже нарисованного на новую развёртку: растеризуем новые треугольники и берём цвет по старым UV
+  function sampleBilinear(img, W, u, v, out, o) {
+    u -= Math.floor(u); v -= Math.floor(v);
+    const x = Math.min(W - 1.001, Math.max(0, u * W - 0.5)), y = Math.min(W - 1.001, Math.max(0, v * W - 0.5));
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, d = img.data;
+    for (let c = 0; c < 4; c++) {
+      const a = d[(y0 * W + x0) * 4 + c], b = d[(y0 * W + x0 + 1) * 4 + c], e = d[((y0 + 1) * W + x0) * 4 + c], f = d[((y0 + 1) * W + x0 + 1) * 4 + c];
+      out[o + c] = (a * (1 - fx) + b * fx) * (1 - fy) + (e * (1 - fx) + f * fx) * fy;
+    }
+  }
+  function bakeImage(srcImg, W, oldUV, newUV, T) {
+    const dst = new ImageData(W, W), dd = dst.data, mask = new Uint8Array(W * W), px = [0, 0, 0, 0];
+    let ar = 0, ag = 0, ab = 0;
+    for (let i = 0; i < W * W * 4; i += 4 * 97) { ar += srcImg.data[i]; ag += srcImg.data[i + 1]; ab += srcImg.data[i + 2]; }
+    const n = Math.ceil(W * W / 97);
+    for (let i = 0; i < W * W * 4; i += 4) { dd[i] = ar / n; dd[i + 1] = ag / n; dd[i + 2] = ab / n; dd[i + 3] = 255; }
+    for (let t = 0; t < T; t++) {
+      const k = t * 6, ax = newUV[k] * W, ay = newUV[k + 1] * W, bx = newUV[k + 2] * W, by = newUV[k + 3] * W, cx = newUV[k + 4] * W, cy = newUV[k + 5] * W;
+      const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      if (Math.abs(area) < 1e-9) continue;
+      const xa = Math.max(0, Math.floor(Math.min(ax, bx, cx))), xb = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cx)));
+      const ya = Math.max(0, Math.floor(Math.min(ay, by, cy))), yb = Math.min(W - 1, Math.ceil(Math.max(ay, by, cy)));
+      for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+        const qx = x + 0.5, qy = y + 0.5;
+        const w1 = ((qx - ax) * (cy - ay) - (qy - ay) * (cx - ax)) / area, w2 = ((bx - ax) * (qy - ay) - (by - ay) * (qx - ax)) / area, w0 = 1 - w1 - w2;
+        if (w0 < -0.002 || w1 < -0.002 || w2 < -0.002) continue;
+        const u = w0 * oldUV[k] + w1 * oldUV[k + 2] + w2 * oldUV[k + 4], v = w0 * oldUV[k + 1] + w1 * oldUV[k + 3] + w2 * oldUV[k + 5];
+        sampleBilinear(srcImg, W, u, v, px, 0);
+        const o = (y * W + x) * 4;
+        dd[o] = px[0]; dd[o + 1] = px[1]; dd[o + 2] = px[2]; dd[o + 3] = 255; mask[y * W + x] = 1;
+      }
+    }
+    // расширяем острова на 3 текселя, чтобы на швах не просвечивал фон
+    for (let pass = 0; pass < 3; pass++) {
+      const add = [];
+      for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+        if (mask[y * W + x]) continue;
+        const nb = x > 0 && mask[y * W + x - 1] ? y * W + x - 1 : x < W - 1 && mask[y * W + x + 1] ? y * W + x + 1 : y > 0 && mask[(y - 1) * W + x] ? (y - 1) * W + x : y < W - 1 && mask[(y + 1) * W + x] ? (y + 1) * W + x : -1;
+        if (nb >= 0) add.push(y * W + x, nb);
+      }
+      for (let i = 0; i < add.length; i += 2) {
+        const o = add[i] * 4, p = add[i + 1] * 4;
+        dd[o] = dd[p]; dd[o + 1] = dd[p + 1]; dd[o + 2] = dd[p + 2]; mask[add[i]] = 1;
+      }
+    }
+    return dst;
+  }
+
+  function targetMesh() { return selected || (meshes().length === 1 ? meshes()[0] : null); }
+
+  function autoUnwrap() {
+    const m = targetMesh();
+    if (!m) { toast('Сначала выберите объект.'); return; }
+    if (Array.isArray(m.material) && m.material.length > 1) { toast('Объект с несколькими материалами не разворачивается.'); return; }
+    if (ed && ed.base) return;
+    const btn = $('eUnwrap'); btn.disabled = true;
+    setTimeout(() => {
+      try {
+        const E = edFromGeo(m), T = E.tw.length / 3, oldUV = E.tuv.slice();
+        const res = unwrapModel(E);
+        E.tuv = res.uv;
+        const r = edBuild(E), old = m.geometry, entry = m.userData.paint && m.userData.paint[0];
+        let stA = null, stB = null;
+        if (entry) {
+          const W = entry.size, ca = entry.ctx, cb = entry.orig.getContext('2d');
+          stA = ca.getImageData(0, 0, W, W); stB = cb.getImageData(0, 0, W, W);
+          ca.putImageData(bakeImage(stA, W, oldUV, res.uv, T), 0, 0);
+          cb.putImageData(bakeImage(stB, W, oldUV, res.uv, T), 0, 0);
+          entry.tex.needsUpdate = true;
+        }
+        m.geometry = r.geo;
+        if (!entry) prepareMesh(m);
+        let other = old;
+        commit({
+          bytes: old.attributes.position.array.byteLength * 3 + (entry ? entry.size * entry.size * 8 : 0),
+          swap() {
+            const cur = m.geometry; m.geometry = other; other = cur;
+            if (entry) {
+              const W = entry.size, ca = entry.ctx, cb = entry.orig.getContext('2d');
+              const nA = ca.getImageData(0, 0, W, W), nB = cb.getImageData(0, 0, W, W);
+              ca.putImageData(stA, 0, 0); cb.putImageData(stB, 0, 0); stA = nA; stB = nB;
+              entry.tex.needsUpdate = true;
+            }
+            if (ed && ed.mesh === m) edReload();
+            updateInfo();
+          },
+          drop() { other.dispose(); }
+        });
+        if (ed && ed.mesh === m) edReload();
+        updateInfo();
+        toast('Развёртка готова: островов ' + res.charts + '. Нарисованное перенесено.');
+      } catch (e) { toast('Не удалось развернуть объект.'); }
+      btn.disabled = false;
+    }, 30);
+  }
+
+  // ---------- просмотр UV ----------
+  let uvDirty = true, uvLast = 0, lastPaintMesh = null;
+  function uvMesh() { return selected || lastPaintMesh || (meshes().length === 1 ? meshes()[0] : null); }
+  function drawUV() {
+    const cv = $('uvCv'), g = cv.getContext('2d'), W = cv.width, m = uvMesh();
+    const cs = getComputedStyle(document.documentElement);
+    g.clearRect(0, 0, W, W);
+    g.fillStyle = cs.getPropertyValue('--bg') || '#ccc'; g.fillRect(0, 0, W, W);
+    if (!m || !m.geometry.attributes.uv) { $('uvInfo').textContent = 'Нет UV: выберите объект.'; return; }
+    const e = m.userData.paint && m.userData.paint[0];
+    if (e) { g.globalAlpha = 0.9; g.drawImage(e.canvas, 0, 0, W, W); g.globalAlpha = 1; }
+    const geo = m.geometry, U = geo.attributes.uv.array, idx = geo.index ? geo.index.array : null, n = idx ? idx.length : geo.attributes.position.count;
+    if (ed && ed.mesh === m && ed.selMode === 'face' && ed.selF.size) {
+      g.fillStyle = 'rgba(255,138,31,0.55)';
+      ed.selF.forEach((t) => {
+        g.beginPath();
+        for (let c = 0; c < 3; c++) { const v = idx ? idx[t * 3 + c] : t * 3 + c; g[c ? 'lineTo' : 'moveTo'](U[v * 2] * W, U[v * 2 + 1] * W); }
+        g.closePath(); g.fill();
+      });
+    }
+    g.beginPath();
+    for (let i = 0; i < n; i += 3) {
+      for (let c = 0; c < 3; c++) { const v = idx ? idx[i + c] : i + c; g[c ? 'lineTo' : 'moveTo'](U[v * 2] * W, U[v * 2 + 1] * W); }
+      g.closePath();
+    }
+    g.lineWidth = 1; g.strokeStyle = 'rgba(15,25,35,0.75)'; g.stroke();
+    let out = 0;
+    for (let i = 0; i < U.length; i++) if (U[i] < -0.001 || U[i] > 1.001) { out++; break; }
+    $('uvInfo').textContent = (m.userData.label || 'Объект') + ' · UV на сетке ' + (e ? e.size + '×' + e.size : '') + (out ? ' · есть выход за 0–1' : '');
+  }
+  function setUvView(on) { $('uvBox').hidden = !on; $('uvBtn').setAttribute('aria-pressed', String(on)); uvDirty = true; }
+  $('uvBtn').addEventListener('click', () => setUvView($('uvBox').hidden));
+  $('eUv').addEventListener('click', () => setUvView($('uvBox').hidden));
+  $('eUnwrap').addEventListener('click', autoUnwrap);
+
   // ---------- рисование (текстура) ----------
   const pickEntry = (cx, cy) => {
     const h = hitMeshes(cx, cy);
     if (!h) return null;
     const o = h.object, list = o.userData.paint;
     if (!list || !h.uv) return null;
+    lastPaintMesh = o;
     const idx = Array.isArray(o.material) && h.face ? h.face.materialIndex : 0;
     const e = list[idx] || list[0];
     return e ? { entry: e, uv: h.uv } : null;
@@ -1814,6 +2040,7 @@ button,input{font:inherit;color:inherit}
     $('hudStats').textContent = (selected ? (selected.userData.label || 'Объект') : 'Сцена') + ': вершин ' + fmt(v) + ' · рёбер ' + fmt(e) + ' · треугольников ' + fmt(t);
   }
   function updateInfo() {
+    uvDirty = true;
     updateHud();
     const m = selected || (meshes().length === 1 ? meshes()[0] : null);
     $('scInfo').textContent = m ? (m.userData.label || 'Объект') + ' · вершин: ' + fmt(m.geometry.attributes.position.count) : 'Коснитесь модели, чтобы выбрать объект';
@@ -1990,11 +2217,12 @@ button,input{font:inherit;color:inherit}
   edited = false;
 
   // для автотестов
-  window.__stylize = { THREE: THREE, camera: camera, canvas: canvas, getRoot: () => root, meshes: meshes, select: select, setTab: setTab, setTool: setTool, sculpt: sculpt, undoStack: undoStack, redoStack: redoStack, addShape: addShape, controls: controls, ed: () => ed, edExtrude: edExtrude, edDelete: edDelete, edMakeFace: edMakeFace, edMerge: edMerge, edFlip: edFlip, edSetMode: edSetMode, edSelectAll: edSelectAll, setWire: setWire, wires: wires, pivot: pivot, tc: tc };
+  window.__stylize = { THREE: THREE, camera: camera, canvas: canvas, getRoot: () => root, meshes: meshes, select: select, setTab: setTab, setTool: setTool, sculpt: sculpt, undoStack: undoStack, redoStack: redoStack, addShape: addShape, controls: controls, ed: () => ed, edExtrude: edExtrude, edDelete: edDelete, edMakeFace: edMakeFace, edMerge: edMerge, edFlip: edFlip, edSetMode: edSetMode, edSelectAll: edSelectAll, setWire: setWire, wires: wires, autoUnwrap: autoUnwrap, setUvView: setUvView, allEntries: allEntries, pivot: pivot, tc: tc };
 
   renderer.setAnimationLoop(() => {
     controls.update();
-    if (dirty.size) { dirty.forEach((e) => { e.tex.needsUpdate = true; }); dirty.clear(); }
+    if (dirty.size) { dirty.forEach((e) => { e.tex.needsUpdate = true; }); dirty.clear(); uvDirty = true; }
+    if (!$('uvBox').hidden && uvDirty && performance.now() - uvLast > 160) { uvDirty = false; uvLast = performance.now(); drawUV(); }
     if (selected && selBox.visible) selBox.setFromObject(selected);
     syncWires(); edSyncOverlayMatrix();
     renderer.render(scene, camera);
